@@ -8,3 +8,5 @@ recursive-include drop_wd/static *
 recursive-include drop_wd/templates *
 recursive-include drop_wd/management *
 recursive-include drop_wd/migrations *
+recursive-include drop_wd/settings *
+recursive-include drop_wd/reports *
