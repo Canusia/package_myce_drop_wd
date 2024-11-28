@@ -1,0 +1,150 @@
+{% extends "cis/logged-base-modal.html" %}
+{%block title %}{{ page_title }}{% endblock %}
+
+{% load templatehelpers %}
+{% load crispy_forms_tags %}
+
+{% block body %}
+<script>
+    jQuery(function ($) {
+        $('.dataTable').DataTable();
+    });
+</script>
+<main>
+    <div class="row">
+        {% if messages %}
+        <div class="col-12 mb-3">
+            <ul class="messages list-group">
+                {% for message in messages %}
+                <li{% if message.tags %} class="list-group-item {{ message.tags }}" {% endif %}>
+                    {{ message }}
+                    </li>
+                    {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <div class="col-md-12 col-sm-12 mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5>Request Details</h5>
+                    
+                    <div class="card-text">                        
+                        {% if needs_to_approve %}
+                            <div class="alert alert-info">
+                                <h5>Awaiting your Review</h5>
+                                <form action="" method="post">
+                                    {% csrf_token %}
+                                    {{ review_request_form | crispy }}
+                                    <input type="submit" class="btn btn-primary btn-sm" value="Submit Decision">
+                                </form>
+                            </div>
+                        {% endif %}
+
+                        {{record.asHTML|safe}}
+                    </div>
+
+                </div>
+            </div>
+        </div>
+        <div class="col-md-8 d-none col-sm-12">
+            <ul class="nav nav-tabs">
+                <li class="nav-item">
+                    <a class="nav-link active" data-toggle="tab" href="#signatures">Signatures</a>
+                </li>
+                <li class="nav-item d-none">
+                    <a class="nav-link" data-toggle="tab" href="#notes">Notes</a>
+                </li>
+            </ul>
+            <!-- Tab panes -->
+            <div class="tab-content">
+                <div class="tab-pane" id="notes">
+                    <div class="row">
+                        <div class="col-12 bg-gray-100">
+                            <div class="card mb-4 border-top-0">
+                                <div class="card-body ">
+
+                                    <div class="text-right">
+                                        <a href="#notes" class="btn btn-sm btn-primary ajax-add_new"
+                                            data-parent="{{record.id}}" data-id="-1" data-modal="modal-add_new"
+                                            data-model="classsectionnote" data-updater=""><i
+                                                class="fa fas-light fa-plus-circle"></i>&nbsp;Add New Note</a>
+                                    </div>
+                                    <div class="clearfix">&nbsp;</div>
+                                    <div class="table-responsive">
+                                        <table class="table ">
+                                            <thead>
+                                                <tr>
+                                                    <th>Added On</th>
+                                                    <th>Note</th>
+                                                    <th>Added By</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for r in notes %}
+                                                <tr>
+                                                    <td>{{r.createdon|date:'m/d/Y H:i a'}}<br>{{r.meta.type}}</td>
+                                                    <td>
+                                                        {{r.note}}
+                                                    </td>
+                                                    <td>{{r.createdby.first_name}} {{r.createdby.last_name}}</td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div> <!-- end #notes -->
+
+                <div class="tab-pane  active" id="signatures">
+                    <div class="">
+                        <div class="">
+                            <div class="card border-top-0">
+                                <div class="card-body">
+
+                                    <h5 class="card-title">Student Signature</h5>
+                                    {%if record.has_student_signed %}
+                                    <p class="alert alert-success">Received</p>
+                                    {%else%}
+                                    <form action="" method="post">
+
+                                        {{student_form.media}}
+
+                                        {% csrf_token %}
+                                        {{ student_form | crispy }}
+
+                                        <input type="submit" id="id_student_form" value="Submit Student Signature"
+                                            name="btn_submit_request" class="btn btn-primary submit" />
+                                    </form>
+                                    {%endif%}
+                                    <hr>
+                                    <h5 class="card-title">Parent Signature</h5>
+                                    {%if record.has_parent_signed %}
+                                    <p class="alert alert-success">Received</p>
+                                    {%else%}
+                                    <form action="" method="post">
+
+                                        {{parent_form.media}}
+
+                                        {% csrf_token %}
+                                        {{ parent_form | crispy }}
+
+                                        <input type="submit" id="id_parent_form" value="Submit Parent Signature"
+                                            name="btn_submit_request" class="btn btn-primary submit" />
+                                    </form>
+                                    {%endif%}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div> <!-- end col-md-8 -->
+
+    </div> <!-- end row -->
+
+</main>
+{% endblock %}

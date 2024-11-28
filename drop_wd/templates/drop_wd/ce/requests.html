@@ -1,0 +1,42 @@
+{% extends "cis/logged-base.html" %}
+{%block title %}{{page_title}}{% endblock %}
+
+{% load templatehelpers %}
+
+{% block body %}
+
+<main>
+    <div class="">
+        <div class="row">
+            <div class="col-sm-6 col-xs-12">
+                <h1 class="h3 mb-4 text-gray-800">{{page_title}}&nbsp;
+                </h1>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+
+            <div class="">
+                {% include "cis/messages.html" with messages=messages %}
+                <ul class="nav nav-tabs">
+                    <li class="nav-item">
+                        <a class="nav-link active" data-toggle="tab" href="#all">All {{page_title}}</a>
+                    </li>
+                </ul>
+
+                <div class="tab-content">
+
+                    <div class="tab-pane active " id="all">
+                        {% include 'drop_wd/ce/requests_table.html' %}
+                    </div>
+                    <!-- end tab # records_active -->
+
+                </div>
+                <!-- end tab-content -->
+
+            </div>
+        </div>
+
+</main>
+
+{% endblock %}

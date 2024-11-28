@@ -1,0 +1,384 @@
+{% extends "cis/logged-base.html" %}
+{%block title %}{{page_title}}{% endblock %}
+
+{% load templatehelpers %}
+{% load crispy_forms_tags %}
+
+{% block body %}
+
+<main>
+
+    {{intro|safe}}
+    
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'instructor:dashboard' %}">Home</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Drop/WD Requests</li>
+        </ol>
+    </nav>
+    
+    <div class="">
+        <div class="table-responsive">
+            <div class="">
+                <ul class="nav nav-tabs">
+                    {% if can_submit_new_request %}
+                        <li class="nav-item">
+                            <a class="nav-link active" data-toggle="tab" href="#add_new">Submit New Request</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link " data-toggle="tab" href="#all">All Requests</a>
+                        </li>
+                    {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link active" data-toggle="tab" href="#all">All Requests</a>
+                        </li>
+                    {% endif %}
+                    
+                </ul>
+                <div class="tab-content">
+                    {% if can_submit_new_request %}
+                    <div class="tab-pane active" id="add_new">
+                        <div class="card border-top-0">
+                            <div class="card-body">
+                                {{submit_new_intro|safe}}
+                                {% include 'drop_wd/instructor/start_request.html' %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="tab-pane {% if not can_submit_new_request %} active {% endif %}" id="all">
+                        <div class="bg-white border border-top-0">
+                            
+                            {{drop_wd_intro|safe}}
+
+                            <div class="col-12 pt-3 mb-3">
+                                <div class="row">
+                                    <div class="col-md-12 mb-3">
+                                        <div class="card">
+                                            <div class="card-body bg-gray-200">
+                                                <form id="all_req_filter" class="form-inline float-right filter">
+                                                    <div class="form-row">
+                                                        <div class="col">
+                                                            <div class="float-right">
+                                                                <select class="form-control mt-2" name="term">
+                                                                    <option value="">Filter By Term</option>
+                                                                    {% for c in terms %}
+                                                                    <option value="{{c.id}}"
+                                                                        {% if c.id == active_term.id %} selected
+                                                                        {% endif %}>{{c.label}} {{c.year}}</option>
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </form> <!-- end search form -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <table id="records_all_drop_requests" class="table table-striped responsive" style="width:100%">
+                                    <thead>
+                                        <tr>
+                                            {% if needs_to_approve %}
+                                            <th data-data="id" data-name='id'></th>
+                                            {% endif %}
+                                            <th data-data="created_on"
+                                                data-name="created_on">Submitted On
+                                            </th>
+                                            <th data-data="created_by"
+                                                data-name="created_by">Submitted By
+                                            </th>
+                                            <th data-data="registration.class_section.term.code"
+                                                data-name="registration.class_section.term.code">Term
+                                            </th>
+                                            <th data-data="registration.student.user.last_name"
+                                                data-name="registration.student.user.last_name">Student</th>
+                                            <th data-data="registration.class_section.course.name"
+                                                data-name="registration.class_section.course.name">Course
+                                            </th>
+                                            <th data-data="registration.class_section.class_number"
+                                                data-name="registration.class_section.class_number">Class No.
+                                            </th>
+                                            <th data-data="approvals"
+                                                data-name="approvals">Approvals
+                                            </th>
+                                            <th data-data="status" data-name='status'>Status</th>
+                                            
+                                            <th data-data="id" data-name='id'><span class="sr-only">Actions</span></th>
+                                        </tr>
+                                    </thead>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- end tab # records_active -->
+
+                </div>
+                <!-- end tab-content -->
+
+                <script>
+                    var table_records_all_drop_requests;
+
+                    function do_bulk_action(action, dt) {
+
+                        if(!dt.rows('.selected').any()) {
+                            alert("Please select a row by clicking on it and try again.")
+                            return
+                        }
+
+                        var selectedRows = dt.rows({ selected: true });
+                        let data = {
+                            'action': action,
+                            'ids': Array()
+                        }
+                        selectedRows.every(function() {
+                            data.ids.push(this.id())
+                        })
+
+                        // $(dt).block()
+                        url = "{%url 'instructor_drop_wd:bulk_actions' %}"
+                        let modal = "modal-bulk_actions"
+
+                        $.ajax({
+                            type: "GET",
+                            url: url,
+                            data: data,
+                            success: function(response) {
+                                if(response.status == 'success') {
+                                    swal({
+                                        title: 'Success',
+                                        text: response.message,
+                                        icon: response.status
+                                    }).then(
+                                        (value) => {
+                                            table_records_all_drop_requests.ajax.reload();
+                                        }
+                                    )
+
+                                } else {
+                                    $("#bulk_modal_content").html(response);
+                                    $("#" + modal).modal('show');
+                                }
+                            }
+                        });
+                    }
+
+                    $(document).ready(function () {
+                        let baseURL = '/instructor/drop_wd/api/requests/?format=datatables'
+
+                        $(document).on("change", "form#all_req_filter :input", function () {
+                            load_data();
+                        })
+
+                        function load_data() {
+                            let form = $('form#all_req_filter')
+                            let newURL = baseURL + '&' + $(form).serialize();
+
+                            table_records_all_drop_requests.ajax.url(newURL).load()
+                        }
+
+                        setInterval(function() {
+                            table_records_all_drop_requests.ajax.reload(null, false);
+                        }, 5000 * 60);
+
+                        table_records_all_drop_requests = $('#records_all_drop_requests')
+                           .DataTable({
+                                "fnDrawCallback": function( oSettings ) {
+                                    $.unblockUI();
+                                },
+                                {% if needs_to_approve %}
+                                columnDefs: [
+                                    {
+                                        orderable: false,
+                                        className: 'select-checkbox',
+                                        targets: 0
+                                    }
+                                ],
+                                order: [[1, 'desc']],
+                                select: {
+                                    style: 'os',
+                                    selector: 'td:first-child'
+                                },
+                                {% else %}
+                                order: [[0, 'desc']],
+                                {% endif %}
+                                ajax: baseURL + '&' + $('form.filter').serialize(),
+                                serverSide: true,
+                                processing: true,
+                                stateSave: true,
+                                language: {
+                                    'loadingRecords': '&nbsp;',
+                                },
+                                rowId: 'id',
+                                dom: 'B<"float-left mt-3 mb-3"l><"float-right mt-3"f><"row clear">rt<"row"<"col-6"i><"col-6 float-right"p>>',
+                                buttons: [
+                                    {
+                                        extend: 'csv', className: 'btn btn-sm btn-primary text-white text-light',
+                                        text: '<i class="fas fa-file-csv text-white"></i>&nbsp;CSV',
+                                        titleAttr: 'Export results to CSV' 
+                                    },
+                                    { 
+                                        extend: 'print', className: 'btn btn-sm btn-primary text-white text-light',
+                                        text: '<i class="fas fa-print text-white"></i>&nbsp;Print',
+                                        titleAttr: 'Print' 
+                                    },
+                                    {% if needs_to_approve %}
+                                    {
+                                        className: 'btn btn-sm btn-primary text-white text-light',
+                                        text: '<i class="fas fa-check text-white"></i>&nbsp;Mark as Approved',
+                                        titleAttr: 'Change Status',
+                                        action: function ( e, dt, node, config ) {
+                                            do_bulk_action('mark_as_approved', dt)
+                                        }
+                                    },
+                                    {% endif %}
+                                ],
+
+                                "createdRow": function( row, data, dataIndex ) {
+                                    if(data['status'] == 'requested')
+                                        $(row).addClass('highlight-row');
+                                },
+                                'lengthMenu': [30, 50, 100],
+                                'columns': [
+                                    {% if needs_to_approve %}
+                                    {
+                                        'searchable': false,
+                                        'render': function (data, type, row, meta) {
+                                            return ''
+                                        }
+                                    },
+                                    {% endif %}
+                                    {
+                                        'searchable': false,
+                                    },
+                                    {
+
+                                        'searchable': false,
+                                        'render': function (data, type, row, meta) {
+                                            if(row.created_by === null)
+                                                return '-'
+
+                                            
+                                            return row.created_by.last_name + ", " + row.created_by.first_name
+                                        }
+                                    },
+                                    {
+
+                                        // 'searchable': false,
+                                        'render': function (data, type, row, meta) {
+                                            return row.registration.class_section.term.label
+                                        }
+                                    },
+                                    {
+
+                                        // 'searchable': false,
+                                        'render': function (data, type, row, meta) {
+                                            return row.registration.student.user.first_name + ' ' + row.registration.student.user.last_name;
+                                        }
+                                    },
+                                    // null,
+                                    {
+                                        
+                                        // 'searchable': false,
+                                    },
+                                    {
+                                        
+                                        // 'searchable': false,
+                                    },
+                                    {
+                                        'orderable': false,  
+                                        'searchable': false
+                                    },
+                                    {
+
+                                        // 'searchable': false,
+                                        'render': function (data, type, row, meta) {
+                                            let col = row.sexy_status
+
+                                            if(row.next_step != '') {
+                                                col += "<br><small class='text-muted'>Next Step - " + row.next_step + "</small>"
+                                            }
+                                            return col
+                                        }
+                                    },
+                                    // {
+                                    //     'searchable': false,
+                                    //     'orderable': false,
+                                    //     'render': function (data, type, row, meta) {
+                                    //         let signature = ''
+                                    //         if (row.student_signature !== null) {
+                                    //             signature += '<span class="text-success">Student</span>'
+                                    //         } else {
+                                    //             signature += '<span class="text-danger">Student</span>'
+                                    //         }
+                                    //         signature += '<br>'
+
+                                    //         if (row.parent_signature !== null) {
+                                    //             signature += '<span class="text-success">Parent</span>'
+                                    //         } else {
+                                    //             signature += '<span class="text-danger">Parent</span>'
+                                    //         }
+                                    //         signature += '<br>'
+                                    //         return signature
+                                    //     }
+                                    // },
+                                    {
+                                        'searchable': false,
+                                        'orderable': false,
+                                        'render': function (data, type, row, meta) {
+                                            return "<a class='btn btn-sm btn-primary' href='" + "/{{url_prefix}}/drop_wd/request/" + row.id + "'>View Details</a>"
+                                        }
+                                    }
+                                ]
+                            }
+                        );
+
+                        $(document).on('click', 'a.btn', function () {
+                            var src = $(this).attr('href');
+
+                            $("#details_src").attr('src', src);
+                            $('#details').modal('show');
+                            return false;
+                        });
+
+                        $("#details").on('hide.bs.modal', function () {
+                            $("#details_src").attr('src', '');
+                            table_records_all_drop_requests.ajax.reload(null, false);
+                            // table.state.clear()
+                        })
+                    });
+
+                </script>
+            </div>
+        </div>
+
+</main>
+
+<style>
+    .modal-dialog,
+    .modal-content {
+        /* 80% of window height */
+        height: 90%;
+    }
+
+    .modal-body {
+        max-height: calc(100vh - 143px);
+        overflow-y: none;
+    }
+</style>
+<div id='details' class='modal fade' role='dialog' tabindex="-1">
+    <div class='modal-dialog  modal-dialog-scrollable' style="max-width: 90%;">
+        <div class='modal-content'>
+            <div class='modal-body' style="position: relative;">
+                <iframe id='details_src' width='100%' height='100%'
+                    style="position:  absolute; height: 98%; width: 97%;" frameborder='0' allowfullscreen></iframe>
+            </div>
+
+            <div class='modal-footer'>
+                <button type='button' class='close' data-dismiss='modal'>&times;</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

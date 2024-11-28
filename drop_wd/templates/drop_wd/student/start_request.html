@@ -1,0 +1,192 @@
+
+{% load templatehelpers %}
+
+{% load crispy_forms_tags %}
+<script>
+    jQuery(document).ready(function ($) {
+        function load_class_registrations() {
+            let class_registrations = $('#id_registration')
+            let section = $('#id_class_section')
+            let term = $('#id_term')
+
+            $.blockUI();
+
+            class_registrations.empty()
+            class_registrations.prop('selectedIndex', 0)
+
+            let url = '/instructor/drop_wd/api/class_section/registrations/?term=' + $(term).val() + '&class_section=' + $(section).val()
+
+            $.getJSON(url, function (data) {
+                if(data.results.length == 0) {
+                    class_registrations.append(
+                        $('<option></option>').attr(
+                            'value', ''
+                        ).text(
+                            'No student(s) found'
+                        )
+                    )
+                } else {
+                    class_registrations.append(
+                        $('<option></option>').attr(
+                            'value', ''
+                        ).text(
+                            'Select Student'
+                        )
+                    )
+
+                    $.each(data.results, function (key, entry) {
+                        class_registrations.append(
+                            $('<option></option>').attr(
+                                'value', entry.id
+                            ).text(
+                                entry.student.user.last_name + ', ' + entry.student.user.first_name + " ( " + entry.status + ")"
+                            )
+                        )
+                    });
+                }
+                $.unblockUI();
+            })
+        }
+
+        function load_class_sections() {
+            let sections = $('#id_class_section')
+            let term = $('#id_term')
+            let class_registrations = $('#id_registration')
+
+            $.blockUI();
+
+            sections.empty()
+            sections.prop('selectedIndex', 0)
+
+            class_registrations.empty()
+            class_registrations.prop('selectedIndex', 0)
+
+            let url = '/instructor/drop_wd/api/class_sections/?term=' + $(term).val()
+
+            $.getJSON(url, function (data) {
+                if(data.results.length == 0) {
+                    sections.append(
+                        $('<option></option>').attr(
+                            'value', ''
+                        ).text(
+                            'No records found'
+                        )
+                    )
+                } else { 
+                    sections.append(
+                        $('<option></option>').attr(
+                            'value', ''
+                        ).text(
+                            'Select Class Section'
+                        )
+                    )
+
+                    $.each(data.results, function (key, entry) {
+                        sections.append(
+                            $('<option></option>').attr(
+                                'value', entry.id
+                            ).text(
+                                entry.course.name + ' / ' + entry.class_number
+                            )
+                        )
+                    });
+                }
+
+                $.unblockUI();
+            })
+        }
+
+        function submit_form() {
+            let signature = $('#id_signature')
+            if ($(signature).val() == '') {
+                alert("Please sign in the box and try again")
+                return false;
+            }
+
+            var formData = new FormData(document.getElementById("frm_request"))
+            $.blockUI();
+
+            $.post({
+                url: '/instructor/drop_wd/submit_request/',
+                data: formData,
+                processData: false,
+                contentType: false,
+                error: function (xhr, status, error) {
+                    let errors = $.parseJSON(xhr.responseJSON.errors);
+
+                    var span = document.createElement('span')
+                    span.innerHTML = xhr.responseJSON.message
+
+                    let first_element = '';
+                    for (var name in errors) {
+                        for (var i in errors[name]) {
+                            var $input = $("[name='" + name + "']");
+                            $input.addClass('is-invalid');
+
+                            $input.after("<p class='invalid-feedback'><strong class=''>" + errors[name][i].message + "</strong></p>");
+                        }
+
+                        if (name == '__all__') {
+                            span.innerHTML += "<br><br>" +
+                                errors[name][0].message
+                        }
+
+                        if (first_element == '')
+                            $input.focus()
+                        else {
+                            first_element = '-'
+                        }
+                    }
+
+                    swal({
+                        title: xhr.responseJSON.title,
+                        content: span,
+                        icon: 'warning'
+                    }).then(
+                        (value) => {
+                            $.unblockUI();
+                        }
+                    );
+                },
+                success: function (response) {
+                    swal({
+                        title: 'Success',
+                        text: response.message,
+                        icon: response.status
+                    }).then(
+                        (value) => {
+                            $.unblockUI();
+
+                            window.location.reload()
+
+                            // let class_registrations = $('#id_registration')
+                            // let section = $('#id_class_section')
+                            // let term = $('#id_term')
+
+                            // class_registrations.empty()
+                            // section.empty()
+                            // $("#id_note").val('')
+
+                            // table_records_all_drop_requests.ajax.reload()
+                        }
+                    )
+                }
+            })
+            return false;
+        }
+
+        $('#id_term').on('change', load_class_sections);
+        $('#id_class_section').on('change', load_class_registrations)
+        $('form#frm_request').on('submit', submit_form)
+    });
+</script>
+<form action="" method="post" id="frm_request">
+
+    {{submit_new_drop_request_form.media}}
+
+    {% csrf_token %}
+    {{ submit_new_drop_request_form | crispy }}
+
+    <input type="submit" id="id_submitForm" value="Submit Request" name="btn_submit_request"
+        class="btn btn-primary submit" />
+</form>

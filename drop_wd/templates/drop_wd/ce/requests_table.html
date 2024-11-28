@@ -1,0 +1,217 @@
+
+<script>
+    var table_drop_wd_requests;
+   
+
+    setInterval(function () {
+
+        if (!table_drop_wd_requests.rows('.selected').any())
+            table_drop_wd_requests.ajax.reload(null, false);
+    }, 10000 * 60);
+
+    $(document).ready(function () {
+        $('#records_drop_wd_requests thead tr').clone(true).appendTo( '#records_drop_wd_requests thead' );
+                        $('#records_drop_wd_requests thead tr:eq(1) th').each( function (i) {
+                            if($(this).attr('searchable') != '1') {
+                                $(this).html('')
+                            } else {
+                                var title = $(this).text();
+                                $(this).html( '<input type="text" class="form-control" placeholder="Search '+title+'" />' );
+                        
+                                $( 'input', this ).on( 'keyup change', function () {
+                                    if ( table_drop_wd_requests.column(i).search() !== this.value ) {
+                                        table_drop_wd_requests
+                                            .column(i)
+                                            .search( this.value )
+                                            .draw();
+                                    }
+                                } );
+                            }
+                        } ); 
+
+        let baseURL = '/instructor/drop_wd/api/requests/?format=datatables'
+
+        {% if type == 'student' %}
+            baseURL += "&student_id=" + "{{record.id}}"
+        {% elif type == 'class_section' %}
+            baseURL += "&class_section_id=" + "{{record.id}}"
+        {% elif type == 'highschool' %}
+            baseURL += "&highschool_id=" + "{{record.id}}"
+        {% elif type == 'term' %}
+            baseURL += "&term_id=" + "{{record.id}}"
+        {% elif type == 'academic_year' %}
+            baseURL += "&academic_year_id=" + "{{record.id}}"
+        {% elif type == 'teacher' %}
+            baseURL += "&teacher_id=" + "{{record.id}}"
+        {% elif type == 'course' %}
+            baseURL += "&course_id=" + "{{record.id}}"
+        {% endif %}
+
+        $(document).on("change", "form#all_req_filter :input", function () {
+            load_data();
+        })
+
+        function load_data() {
+            let form = $('form#all_req_filter')
+            let newURL = baseURL + '&' + $(form).serialize();
+
+            table_drop_wd_requests.ajax.url(newURL).load()
+        }
+
+        table_drop_wd_requests = $('#records_drop_wd_requests')
+            .DataTable({
+                dom: 'B<"float-left mt-3 mb-3"l><"float-right mt-3"f><"row clear">rt<"row"<"col-6"i><"col-6 float-right"p>>',
+                buttons: [
+                    {
+                        extend: 'csv', className: 'btn btn-sm btn-primary text-white text-light',
+                        text: '<i class="fas fa-file-csv text-white"></i>&nbsp;CSV',
+                        titleAttr: 'Export results to CSV'
+                    },
+                    {
+                        extend: 'print', className: 'btn btn-sm btn-primary text-white text-light',
+                        text: '<i class="fas fa-print text-white"></i>&nbsp;Print',
+                        titleAttr: 'Print'
+                    },
+                ],
+                ajax: baseURL + '&' + $('form.filter').serialize(),
+                serverSide: true,
+                processing: true,
+                stateSave: true,
+                language: {
+                    'loadingRecords': '&nbsp;',
+                },
+                order: [[0, 'desc']],
+                'lengthMenu': [30, 50, 100],
+                'columns': [
+                    null,
+                    {
+                        'render': function (data, type, row, meta) {
+                            return row.registration.class_section.term.label
+                        }
+                    },
+                    {
+                        'render': function (data, type, row, meta) {
+                            return row.registration.student.highschool.name
+                        }
+                    },
+                    {
+                        'render': function (data, type, row, meta) {
+                            return row.registration.student.user.last_name + ', ' + row.registration.student.user.first_name;
+                        }
+                    },
+                    {
+                        'render': function (data, type, row, meta) {
+                            return row.registration.class_section.course.name
+                        }
+                    },
+                    {
+                        'render': function (data, type, row, meta) {
+                            let col = row.registration.class_section.class_number + "<br>";
+                                
+                            if(row.registration.class_section.teacher !== null)
+                                col += row.registration.class_section.teacher.user.last_name + ", " + row.registration.class_section.teacher.user.first_name
+                            return col
+                        }
+                    },
+                    {
+                        'searchable': 'false',
+                        'orderable': false
+                    },
+                    {
+                        // 'searchable': false,
+                        'render': function (data, type, row, meta) {
+                            return row.sexy_status
+                        }
+                    },
+                    // {
+                    //     'searchable': false,
+                    //     'orderable': false,
+                    //     'render': function (data, type, row, meta) {
+                    //         let signature = ''
+                    //         if (row.student_signature !== null) {
+                    //             signature += '<span class="text-success">Student</span>'
+                    //         } else {
+                    //             signature += '<span class="text-danger">Student</span>'
+                    //         }
+                    //         signature += '<br>'
+
+                    //         if (row.parent_signature !== null) {
+                    //             signature += '<span class="text-success">Parent</span>'
+                    //         } else {
+                    //             signature += '<span class="text-danger">Parent</span>'
+                    //         }
+                    //         signature += '<br>'
+                    //         return signature
+                    //     }
+                    // },
+                    {
+                        'searchable': false,
+                        'orderable': false,
+                        'render': function (data, type, row, meta) {
+                            if(window.frameElement !== null) {
+                                return "<a class='btn btn-sm btn-primary' refresh-target='table_drop_wd_requests' href='" + "/ce/drop_wd/request/" + row.id + "'>View Details</a>"
+                            }
+                            return "<a class='btn btn-sm btn-primary record-details' refresh-target='table_drop_wd_requests' href='" + "/ce/drop_wd/request/" + row.id + "'>View Details</a>"
+                        }
+                    }
+                ]
+            }
+            );
+    });
+
+</script>
+<div class="bg-white border border-top-0">
+    <div class="col-12 pt-3 mb-3">
+        <div class="row">
+            <div class="col-md-12 mb-3">
+                <div class="card">
+                    <div class="card-body bg-gray-200">
+                        <form id="all_req_filter" class="form-inline float-right filter">
+                            <div class="form-row">
+                                <div class="col">
+                                    <div class="float-right">
+                                        <select class="form-control mt-2" name="term">
+                                            <option value="">Filter By Term</option>
+                                            {% for c in terms %}
+                                            <option value="{{c.id}}">{{c.label}} {{c.year}}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </form> <!-- end search form -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        <table id="records_drop_wd_requests" class="table table-striped responsive" style="width:100%">
+            <thead>
+                <tr>
+                    <th data-data="created_on" data-name="created_on">
+                        Submitted On
+                    </th>
+                    <th searchable="1" data-data="registration.class_section.term.code"
+                        data-name="registration.class_section.term.code">Term
+                    </th>
+                    <th  searchable="1" data-data="registration.student.highschool.name"
+                        data-name="registration.student.highschool.name">High School
+                    </th>
+                    <th  searchable="1" data-data="registration.student.user.last_name"
+                        data-name="registration.student.user.last_name">Student</th>
+                    <th  searchable="1" data-data="registration.class_section.course.name"
+                        data-name="registration.class_section.course.name">Course
+                    </th>
+                    <th data-data="registration.class_section.class_number"
+                        data-name="registration.class_section.class_number">CRN / Instructor
+                    </th>
+                    <th  searchable="0" data-data="approvals" data-name='approvals'>Approvals</th>
+                    <th  searchable="1" data-data="status" data-name='status'>Status</th>
+                    <!-- <th data-data="has_student_signature" data-name="has_student_signature">
+                        Signatures</th> -->
+                    <th data-data="id" data-name='id'><span class="sr-only">Actions</span></th>
+                </tr>
+            </thead>
+        </table>
+    </div>
+</div>
