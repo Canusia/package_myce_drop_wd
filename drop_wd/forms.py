@@ -22,6 +22,14 @@ from cis.utils import (
 from drop_wd.settings.drop_wd_email import drop_wd_email
 from .models import DropWDRequest
 
+from django.forms import ModelChoiceField
+
+class StudentRegistrationChoiceField(ModelChoiceField):
+
+    def label_from_instance(self, obj):
+        return f'{obj.class_section.term}, {obj.class_section.course.name} / {obj.class_section.class_number} ({obj.get_status})'
+
+
 class CEDropRequestForm(forms.Form):
     registration_ids = forms.MultipleChoiceField(
         required=False,
@@ -126,6 +134,11 @@ class EditDropWDRequestForm(EditStudentRegistration, forms.Form):
         help_text='When marked as "Processed" notifications will be automatically sent.'
     )
 
+    reason = forms.ChoiceField(
+        choices=[],
+        label='Reason'
+    )
+    
     ce_note = forms.CharField(
         required=False,
         label='Public Note',
@@ -150,15 +163,45 @@ class EditDropWDRequestForm(EditStudentRegistration, forms.Form):
 
         self.fields['status'].help_text = 'Update registration status'
 
+        if self.fields.get('reason'):
+            self.fields['reason'].initial = record.notes.get('reason')
+
+        form_settings = drop_wd_email.from_db()
+        try:
+            form_labels = json.loads(form_settings.get('form_field_messages', '{}'))
+            form_labels = form_labels.get('editdroprequestform', {})
+            print(form_labels)
+        except:
+            form_labels = {}
+
+
+        if not form_labels.get('reason', False):
+            del self.fields['reason']
+        else:
+            options = form_labels.get('reason').get('choices')
+
+            choices = []
+            for opt in options:
+                choices.append((opt, opt))
+            self.fields['reason'].choices = choices
+
     def save(self, request, record):
         student_registration = StudentRegistration.objects.get(
             pk=record.registration.id
         )
         student_registration = super().save(student_registration)
 
-        record.status = self.cleaned_data['request_status']
-        record.ce_note = self.cleaned_data.get('ce_note')
+        data = self.cleaned_data
+
+        record.status = data['request_status']
+        record.ce_note = data.get('ce_note')
         
+        if not record.notes:
+            record.notes = {}
+
+        if data.get('reason'):
+            record.notes['reason'] = data.get('reason')
+
         record.processed_by = request.user
         record.save()
 
@@ -288,9 +331,14 @@ class DropWDRequestForm(forms.Form):
         empty_label="Select a Class Section"
     )
 
+    reason = forms.ChoiceField(
+        choices=[],
+        label='Reason'
+    )
+
     note = forms.CharField(
         required=True,
-        label='Message to CE/Dual Enroll Office',
+        label='Message to CE/Dual Enroll Office1',
         help_text='This information will be shared with the instructor, school counselor and dual enroll office.',
         widget=forms.Textarea
     )
@@ -325,8 +373,20 @@ class DropWDRequestForm(forms.Form):
         try:
             form_labels = json.loads(form_settings.get('form_field_messages', '{}'))
             form_labels = form_labels.get('noncedroprequestform', {})
+            print(form_labels)
         except:
             form_labels = {}
+
+
+        if not form_labels.get('reasons', False):
+            del self.fields['reason']
+        else:
+            options = form_labels.get('reason').get('choices')
+
+            choices = []
+            for opt in options:
+                choices.append((opt, opt))
+            self.fields['reason'].choices = choices
 
         for field_name in self.fields:
             field = self.fields[field_name]
@@ -334,8 +394,8 @@ class DropWDRequestForm(forms.Form):
             if form_labels.get(field_name):
                 field_attr = form_labels.get(field_name, {})
 
-                field.label = mark_safe(field_attr.get('label', ''))
-                field.help_text = mark_safe(field_attr.get('help_text', ''))
+                field.label = mark_safe(field_attr.get('label', field.label))
+                field.help_text = mark_safe(field_attr.get('help_text', field.help_text))
 
         self.fields['term'].queryset = Term.objects.all()
         self.fields['class_section'].queryset = ClassSection.objects.none()
@@ -380,23 +440,11 @@ class DropWDRequestForm(forms.Form):
         drop_req.registration = data['registration']
         drop_req.note = data['note']
 
-        # if user_has_highschool_admin_role(request.user):
-        #     drop_req.counselor_signature = data['signature']
-        # elif user_has_instructor_role(request.user):
-        #     drop_req.instructor_signature = data['signature']
-
         drop_req.status = 'requested'
         drop_req.created_by = request.user
         drop_req.save()
 
         return drop_req
-
-from django.forms import ModelChoiceField
-
-class StudentRegistrationChoiceField(ModelChoiceField):
-
-    def label_from_instance(self, obj):
-        return f'{obj.class_section.term}, {obj.class_section.course.name} / {obj.class_section.class_number} ({obj.get_status})'
 
 class StudentDropWDRequestForm(DropWDRequestForm, forms.Form):
     
