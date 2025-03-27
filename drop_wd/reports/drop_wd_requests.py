@@ -81,7 +81,7 @@ class drop_wd_requests(forms.Form):
                 status__in=data.get('status')
             )
 
-        file_name = "drop_wd_requests" + str(datetime.datetime.now()) + ".csv"
+        file_name = "drop_wd_requests" + str(datetime.datetime.now().strftime('%m-%d-%Y')) + ".csv"
         fields = {
             # 'pk': 'HighSchoolMemberPositionID',
             'created_on': 'Created On',

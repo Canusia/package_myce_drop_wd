@@ -8,7 +8,7 @@ from django.conf import settings
 from django.template.loader import get_template, render_to_string
 from django.core.validators import validate_email
 
-from drop_wd.settings.drop_wd_email import drop_wd_email
+from .settings.drop_wd_email import drop_wd_email
 
 from model_utils import FieldTracker
 

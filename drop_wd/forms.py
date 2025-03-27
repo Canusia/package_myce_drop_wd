@@ -19,7 +19,7 @@ from cis.utils import (
     user_has_student_role
 )
 
-from drop_wd.settings.drop_wd_email import drop_wd_email
+from .settings.drop_wd_email import drop_wd_email
 from .models import DropWDRequest
 
 class CEDropRequestForm(forms.Form):

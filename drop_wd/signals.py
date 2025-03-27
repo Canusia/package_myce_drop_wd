@@ -10,11 +10,11 @@ from django.template.loader import get_template, render_to_string
 
 from mailer import send_mail, send_html_mail
 
-from drop_wd.settings.drop_wd_email import drop_wd_email
+
 from cis.middleware import current_request
 
-from drop_wd.models import DropWDRequest
-
+from .models import DropWDRequest
+from .settings.drop_wd_email import drop_wd_email
 
 @receiver(pre_save, sender=DropWDRequest)
 def status_changed(sender, instance, **kwargs):
