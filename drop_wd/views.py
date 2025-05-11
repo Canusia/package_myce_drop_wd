@@ -439,7 +439,7 @@ def requests(request):
     menu = {}
     intro = ''
 
-    from drop_wd.settings.drop_wd_email import drop_wd_email as drop_wd_settings
+    from .settings.drop_wd_email import drop_wd_email as drop_wd_settings
 
     page_settings = drop_wd_settings.from_db()
 
@@ -504,3 +504,141 @@ def requests(request):
             'terms': Term.objects.all().order_by('-code')
         }
     )
+
+def parent_signature(request, record_id):
+    """
+    Called when a parent signature is needed
+    """
+    from cis.forms.student import ParentConsentVerificationForm
+
+    record = get_object_or_404(DropWDRequest, pk=record_id)
+    
+    template = 'drop_wd/student/parent-sign-consent.html'
+    student = record.registration.student
+    term = record.registration.class_section.term
+
+    form = ParentConsentVerificationForm(initial={
+        'student': student.id,
+        'term': term.id
+    })
+    
+    if request.method == 'POST':
+        if request.POST.get('action') == 'review_request':
+            review_req_form = RequestReviewForm(request.POST)
+            if review_req_form.is_valid():
+                data = review_req_form.cleaned_data
+
+                if data.get('review_decision') == '1':
+                    status = 'Approved'
+                else:
+                    status = 'Not Approved'
+
+                record.parent_signature = status
+                record.notes['parent_note'] = data.get('note', '')
+
+                record.save()
+
+                record = review_req_form.save(request, record)
+                messages.add_message(
+                    request,
+                    messages.SUCCESS,
+                    'Successfully saved your decision.',
+                    'list-group-item-success'
+                )
+            else:
+                messages.add_message(
+                    request,
+                    messages.SUCCESS,
+                    'Please fix the error(s) and try again.',
+                    'list-group-item-danger'
+                )
+    
+            needs_to_approve = False
+            needs_to_approve = record.record_needs_parent_approval()
+
+            edit_request_form = EditDropWDRequestForm(
+                record
+            )
+            review_req_form = RequestReviewForm()
+            return render(
+                request,
+                template, {
+                    'student_form': DropWDSignatureForm(
+                        initial={
+                            'id':record.id,
+                            'signature_type': 'student'
+                        }),
+                    'parent_form': DropWDSignatureForm(
+                        initial={
+                            'id':record.id,
+                            'signature_type': 'parent'
+                        }),
+                    'review_request_form': review_req_form,
+                    'needs_to_approve': needs_to_approve,
+                    'record': record,
+                    'edit_request_form': edit_request_form,
+                    'student': record.registration.student,
+                    'registration': record.registration
+                })
+        elif request.POST.get('submit_for_verification') == 'Submit For Verification':
+            form = ParentConsentVerificationForm(request.POST)
+
+            if form.is_valid():
+                dob = form.cleaned_data['student_dob']
+                zipcode = form.cleaned_data['student_zip']
+
+                if student.user.date_of_birth.strftime('%m/%d/%Y') == dob and zipcode == student.user.postal_code:
+
+                    needs_to_approve = False
+                    needs_to_approve = record.record_needs_parent_approval()
+
+                    edit_request_form = EditDropWDRequestForm(
+                        record
+                    )
+
+                    review_req_form = RequestReviewForm()
+                    return render(
+                        request,
+                        template, {
+                            'student_form': DropWDSignatureForm(
+                                initial={
+                                    'id':record.id,
+                                    'signature_type': 'student'
+                                }),
+                            'parent_form': DropWDSignatureForm(
+                                initial={
+                                    'id':record.id,
+                                    'signature_type': 'parent'
+                                }),
+                            'review_request_form': review_req_form,
+                            'needs_to_approve': needs_to_approve,
+                            'record': record,
+                            'edit_request_form': edit_request_form,
+                            'student': record.registration.student,
+                            'registration': record.registration
+                        })
+                else:
+                    messages.add_message(
+                        request,
+                        messages.SUCCESS,
+                        f'The information you entered did not match. Please try again.',
+                        'list-group-item-danger')
+            else:
+                messages.add_message(
+                    request,
+                    messages.SUCCESS,
+                    f'Please fix the error(s) and try again.',
+                    'list-group-item-danger'
+                )
+
+    return render(
+        request,
+        template, {
+            'form': form,
+            'term': term,
+            'student': student,
+            'message': {
+                # 'request_consent': ParentConsent.get_form_message(),                
+            }
+        })
+parent_signature.login_required = False

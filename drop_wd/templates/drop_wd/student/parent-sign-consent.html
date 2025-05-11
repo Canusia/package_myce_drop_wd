@@ -1,0 +1,119 @@
+{% extends "cis/base.html" %}
+
+{% load templatehelpers %}
+{% load crispy_forms_tags %}
+
+{% block title %}Parent Consent Form{% endblock %}
+{% block body %}
+
+<main role="main" id="content">
+    <section class="jumbotron text-center bg-transparent">
+        <div class="container">
+            <div class="trans-bg rounded p-2">
+                <h1 class="jumbotron-heading">Parent Consent Form</h1>
+            </div>
+        </div>
+    </section>
+
+    <div class="container">
+        <div class="py-3 bg-light">
+            <div class="row">
+                {% if messages %}
+                <div class="col-md-12 mb-3">
+                    <ul class="messages list-group">
+                        {% for message in messages %}
+                        <li{% if message.tags %} class="list-group-item {{ message.tags }}" {% endif %}>
+                            {{ message }}</li>
+                            {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <div class="col-md-12">
+                    <script>
+                        jQuery(document).ready(function ($) {
+                            $('#hint_id_student_state_id').html('Enter a random 9 digit number that starts with 9');
+                            $('#id_student_state_id').mask('000000000');
+                        });
+                    </script>
+
+                    {% if not review_request_form %}
+                    <script>
+                        jQuery(document).ready(function ($) {
+                            $('#id_student_dob').focus();
+
+                            $('#id_student_dob').mask('00/00/0000');
+                            $('#id_student_zip').mask('00000');
+                        });
+                    </script>
+                    <div class="card">
+                        <div class="card-body">
+                            <p class="alert alert-danger">Please enter the following information about your student to
+                                continue.
+                            </p>
+
+                            <form action="" method="post">
+                                {% csrf_token %}
+                                {{ form | crispy }}
+                                <input type="submit" value="Submit For Verification" name="submit_for_verification"
+                                    class="btn btn-primary" />
+                            </form>
+                        </div>
+                    </div> <!-- end card -->
+                    {% else %}
+                    <!-- end if not parent_consent_form -->
+                    <ul class="nav nav-tabs">
+                        <li class="nav-item">
+                            <a class="nav-link active" data-toggle="tab" href="#sign_consent">Parent Consent</a>
+                        </li>
+                    </ul>
+                    <div class="tab-content">
+                        
+                        <div class="tab-pane active" id="sign_consent">
+                            <div class="card border-top-0">
+                                <div class="card-body">
+                                    <div class="card-text">
+
+                                        {% if parent_consent %}
+                                        <p class="alert alert-info">
+                                            The Parent Consent for current registration term(s) has been signed.
+                                        </p>
+                                        {% else %}
+                                            <div class="card">
+                                                <div class="card-body">
+                                                    <h5>Request Details</h5>
+                                                    
+                                                    <div class="card-text">                        
+                                                        {{record.asHTML|safe}}
+                                                        {% if needs_to_approve %}
+                                                            <div class="alert alert-info">
+                                                                <h5>Awaiting your Review</h5>
+                                                                <form action="" method="post">
+                                                                    {% csrf_token %}
+                                                                    {{ review_request_form | crispy }}
+                                                                    <input type="submit" class="btn btn-primary btn-sm" value="Submit Decision">
+                                                                </form>
+                                                            </div>
+                                                        {% endif %}
+                                
+                                                    </div>
+                                
+                                                </div>
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div> <!-- end tab # sign_consent -->
+
+                    </div>
+                    {% endif %}
+                    <br><br><br><br>
+
+                </div> <!-- end col-md-12 -->
+
+            </div> <!-- end row -->
+        </div>
+    </div>
+</main>
+{% endblock %}

@@ -117,6 +117,22 @@ class DropWDRequest(models.Model):
             return True
         return False
     
+    @classmethod
+    def needs_parent_approval(cls):
+        configs = drop_wd_email.from_db()
+
+        if 'parent' in configs.get('signatures_required_from', []):
+            return True
+        return False
+    
+    def record_needs_parent_approval(self):
+        if not DropWDRequest.needs_parent_approval():
+            return False
+        
+        if self.parent_signature == 'Pending':
+            return True
+        return False
+    
     def record_needs_student_approval(self):
         if not DropWDRequest.needs_student_approval():
             return False
@@ -214,6 +230,10 @@ class DropWDRequest(models.Model):
     @property
     def student_note(self):
         return self.notes.get('student_note', '')
+
+    @property
+    def parent_note(self):
+        return self.notes.get('parent_note', '')
     
     @property
     def instructor_note(self):
@@ -272,14 +292,15 @@ class DropWDRequest(models.Model):
                 instance.registration.student.user.email
             )
         
-        if 'parent' in email_settings.get('notification_list', []):    
-            try:
-                if validate_email(instance.registration.student.parent_email):
-                    to.append(
-                        instance.registration.student.parent_email
-                    )
-            except:
-                ...
+        if 'parent' in email_settings.get('notification_list', []):
+            # if instance.has_parent_signed:
+                try:
+                    if validate_email(instance.registration.student.parent_email):
+                        to.append(
+                            instance.registration.student.parent_email
+                        )
+                except:
+                    ...
 
         if 'instructor' in email_settings.get('notification_list', []):
             try:
@@ -309,7 +330,68 @@ class DropWDRequest(models.Model):
             'message': text_body
         })
 
-        print(text_body)
+        if getattr(settings, 'DEBUG', True) or email_settings.get('is_active') == 'Debug':
+            to = ['kadaji@gmail.com']
+
+        if to:
+            send_html_mail(
+                subject,
+                text_body,
+                html_body,
+                settings.DEFAULT_FROM_EMAIL,
+                to
+            )
+
+    def parent_approval_url(self):
+        from django.urls import reverse_lazy
+        from cis.utils import getDomain
+        return getDomain() + str(reverse_lazy(
+            'student_drop_wd:request_parent_signature',
+            kwargs={
+                'record_id': self.id
+            }
+        ))
+    
+    def request_parent_approval_notification(self):
+
+        instance = self
+        email_settings = drop_wd_email.from_db()
+        if email_settings.get('is_active') == 'No':
+            return
+
+        subject = email_settings.get('pending_parent_approval_email_subject')
+        email_template = Template(email_settings['pending_parent_approval_email'])
+
+        context = Context({
+            'student_first_name': instance.registration.student.user.first_name,
+            'student_last_name': instance.registration.student.user.last_name,
+            'instructor_first_name': instance.registration.class_section.teacher.user.first_name,
+            'instructor_last_name': instance.registration.class_section.teacher.user.last_name,
+            'course_name': instance.registration.class_section.course,
+            'request_status': instance.status,
+            'registration_status': instance.registration.get_status,
+            'ce_note': instance.ce_note if instance.ce_note else '',
+            'term': instance.registration.class_section.term,
+            'request_approval_url': instance.parent_approval_url()
+        })
+
+        text_body = email_template.render(context)
+        to = []
+
+        if 'parent' in email_settings.get('notification_list', []):
+                try:
+                    if validate_email(instance.registration.student.parent_email):
+                        to.append(
+                            instance.registration.student.parent_email
+                        )
+                except:
+                    ...
+
+        template = get_template('cis/email.html')
+        html_body = template.render({
+            'message': text_body
+        })
+
         if getattr(settings, 'DEBUG', True) or email_settings.get('is_active') == 'Debug':
             to = ['kadaji@gmail.com']
 
@@ -434,6 +516,7 @@ class DropWDRequest(models.Model):
     def approvals(self):
         result = ""
         result += f"Student Approval - {self.student_signature}<br>"
+        result += f"Parent Approval - {self.parent_signature}<br>"
         result += f"Instructor Approval - {self.instructor_signature}<br>"
         result += f"Counselor Approval - {self.counselor_signature}<br>"
 
@@ -490,6 +573,10 @@ class DropWDRequest(models.Model):
             [
                 'student_signature',
                 'student_note'
+            ],
+            [
+                'parent_signature',
+                'parent_note'
             ],
             [
                 'instructor_signature',

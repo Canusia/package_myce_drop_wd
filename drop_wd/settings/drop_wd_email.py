@@ -58,6 +58,7 @@ class SettingForm(forms.Form):
     signatures_required_from = forms.MultipleChoiceField(
         choices=[
             ('student', 'Student'),
+            ('parent', 'Parent'),
             ('instructor', 'Instructor'),
             ('highschool_admin', 'High School Administrator'),
         ],
@@ -91,6 +92,20 @@ class SettingForm(forms.Form):
         validators=[validate_html_short_code],
         help_text='Email template sent when request is submitted and updated. Customize with {{instructor_first_name}}, {{instructor_last_name}}, {{student_first_name}}, {{student_last_name}}, {{course_name}}, {{term}}, {{ce_note}}, {{registration_status}}, {{request_status}}. <a href="#" class="float-right" onClick="do_bulk_action(\'drop_wd_email\', \'processed_email\')" >See Preview</a>',
         label="Request Submitted/Processed - Email"
+    )
+
+    # use for different status labels of request
+    pending_parent_approval_email_subject = forms.CharField(
+        max_length=200,
+        help_text='',
+        label="Pending Parent Approval - Email Subject")
+
+    pending_parent_approval_email = forms.CharField(
+        max_length=None,
+        widget=forms.Textarea,
+        validators=[validate_html_short_code],
+        help_text='Email template sent when request is submitted and updated. Customize with {{instructor_first_name}}, {{instructor_last_name}}, {{student_first_name}}, {{student_last_name}}, {{course_name}}, {{term}}, {{ce_note}}, {{registration_status}}, {{request_status}}, {{request_approval_url}}. <a href="#" class="float-right" onClick="do_bulk_action(\'drop_wd_email\', \'processed_email\')" >See Preview</a>',
+        label="Pending Parent Approval - Email"
     )
 
     email_address_to_cep = forms.CharField(
@@ -137,6 +152,9 @@ class SettingForm(forms.Form):
             'notification_list': self.cleaned_data['notification_list'],
             'processed_email_subject': self.cleaned_data['processed_email_subject'],
             'processed_email': self.cleaned_data['processed_email'],
+
+            'pending_parent_approval_email_subject': self.cleaned_data['pending_parent_approval_email_subject'],
+            'pending_parent_approval_email': self.cleaned_data['pending_parent_approval_email'],
             
             'email_address_to_cep': self.cleaned_data['email_address_to_cep'],
             'email_subject_to_cep': self.cleaned_data['email_subject_to_cep'],

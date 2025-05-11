@@ -52,6 +52,8 @@ def status_changed(sender, instance, **kwargs):
         instance.status_changed_on = status_changed_on
 
         instance.send_processed_notification()
+        if instance.record_needs_parent_approval():
+            instance.request_parent_approval_notification()
             
 @receiver(post_save, sender=DropWDRequest)
 def create_new_request(sender, instance, created, **kwargs):
@@ -87,6 +89,13 @@ def create_new_request(sender, instance, created, **kwargs):
                     DropWDRequest.objects.filter(
                         id=instance.id
                     ).update(student_signature=signature_status)
+                                        
+                if DropWDRequest.needs_parent_approval():
+                    signature_status = 'Pending'
+
+                    DropWDRequest.objects.filter(
+                        id=instance.id
+                    ).update(parent_signature=signature_status)
                     
                 if DropWDRequest.needs_administrator_approval():
                     if user_has_highschool_admin_role(request.user):
