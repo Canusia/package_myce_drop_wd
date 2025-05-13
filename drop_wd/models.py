@@ -40,6 +40,8 @@ class DropWDRequest(models.Model):
         # ('approved_instructor', 'Approved'),
         # ('not_approved_instructor', 'Not Approved'),
         ('processed', 'Processed')
+        ('approved', 'Approved')
+        ('not_approved', 'Not Approved')
     )
     status = models.CharField(
         max_length=50,

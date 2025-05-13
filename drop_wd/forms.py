@@ -385,6 +385,38 @@ class DropWDRequestForm(forms.Form):
         # elif user_has_instructor_role(request.user):
         #     drop_req.instructor_signature = data['signature']
 
+
+        from cis.utils import user_has_instructor_role, user_has_student_role, user_has_highschool_admin_role
+
+        if DropWDRequest.needs_instructor_approval():
+            if user_has_instructor_role(request.user):
+                signature_status = 'Approved'
+            else:
+                signature_status = 'Pending'
+
+            req.instructor_signature=signature_status
+            
+        if DropWDRequest.needs_student_approval():
+            if user_has_student_role(request.user):
+                signature_status = 'Approved'
+            else:
+                signature_status = 'Pending'
+
+            req.student_signature=signature_status
+                                
+        if DropWDRequest.needs_parent_approval():
+            signature_status = 'Pending'
+
+            req.parent_signature=signature_status
+            
+        if DropWDRequest.needs_administrator_approval():
+            if user_has_highschool_admin_role(request.user):
+                signature_status = 'Approved'
+            else:
+                signature_status = 'Pending'
+
+            req.counselor_signature=signature_status
+
         drop_req.status = 'requested'
         drop_req.created_by = request.user
         drop_req.save()
@@ -452,7 +484,40 @@ class StudentDropWDRequestForm(DropWDRequestForm, forms.Form):
 
         # req.student_signature = data.get('signature')
         req.created_by = request.user
+        req.student_signature = 'Approved'
+
+        from cis.utils import user_has_instructor_role, user_has_student_role, user_has_highschool_admin_role
+
+        if DropWDRequest.needs_instructor_approval():
+            if user_has_instructor_role(request.user):
+                signature_status = 'Approved'
+            else:
+                signature_status = 'Pending'
+
+            req.instructor_signature=signature_status
+            
+        if DropWDRequest.needs_student_approval():
+            if user_has_student_role(request.user):
+                signature_status = 'Approved'
+            else:
+                signature_status = 'Pending'
+
+            req.student_signature=signature_status
+                                
+        if DropWDRequest.needs_parent_approval():
+            signature_status = 'Pending'
+
+            req.parent_signature=signature_status
+            
+        if DropWDRequest.needs_administrator_approval():
+            if user_has_highschool_admin_role(request.user):
+                signature_status = 'Approved'
+            else:
+                signature_status = 'Pending'
+
+            req.counselor_signature=signature_status
 
         req.save()
+
 
         return req
