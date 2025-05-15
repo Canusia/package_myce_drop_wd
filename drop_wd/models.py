@@ -39,8 +39,8 @@ class DropWDRequest(models.Model):
         ('requested', 'Requested'),
         # ('approved_instructor', 'Approved'),
         # ('not_approved_instructor', 'Not Approved'),
-        ('processed', 'Processed')
-        ('approved', 'Approved')
+        ('processed', 'Processed'),
+        ('approved', 'Approved'),
         ('not_approved', 'Not Approved')
     )
     status = models.CharField(
