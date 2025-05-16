@@ -394,7 +394,7 @@ class DropWDRequestForm(forms.Form):
             else:
                 signature_status = 'Pending'
 
-            req.instructor_signature=signature_status
+            drop_req.instructor_signature=signature_status
             
         if DropWDRequest.needs_student_approval():
             if user_has_student_role(request.user):
@@ -402,12 +402,12 @@ class DropWDRequestForm(forms.Form):
             else:
                 signature_status = 'Pending'
 
-            req.student_signature=signature_status
+            drop_req.student_signature=signature_status
                                 
         if DropWDRequest.needs_parent_approval():
             signature_status = 'Pending'
 
-            req.parent_signature=signature_status
+            drop_req.parent_signature=signature_status
             
         if DropWDRequest.needs_administrator_approval():
             if user_has_highschool_admin_role(request.user):
@@ -415,7 +415,7 @@ class DropWDRequestForm(forms.Form):
             else:
                 signature_status = 'Pending'
 
-            req.counselor_signature=signature_status
+            drop_req.counselor_signature=signature_status
 
         drop_req.status = 'requested'
         drop_req.created_by = request.user
