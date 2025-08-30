@@ -5,6 +5,18 @@ from cis.serializers.registration import StudentRegistrationSerializer
 
 from .models import DropWDRequest
 
+
+class GroupCountSerializer(serializers.Serializer):
+    key = serializers.CharField(allow_null=True)
+    label = serializers.CharField(allow_null=True, required=False)
+    count = serializers.IntegerField()
+
+class DropWDMetricsSerializer(serializers.Serializer):
+    by_status = GroupCountSerializer(many=True)
+    by_course = GroupCountSerializer(many=True)
+    by_highschool = GroupCountSerializer(many=True)
+    pending_signatures = serializers.DictField()
+    
 class DropWDRequestSerializer(serializers.ModelSerializer):
     registration = StudentRegistrationSerializer()
 

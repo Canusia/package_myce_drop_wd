@@ -59,7 +59,40 @@
                                 )
                                 return false;
                             }
-
+                            $("#send-parent-email").on("click", function () {
+                                $.blockUI();
+                                $.ajax({
+                                    type: 'POST',
+                                    url: "{% url 'ce_drop_wd:send_parent_email' record.id %}",
+                                    data: {
+                                        'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+                                    },
+                                    success: function (response) {
+                                        $.unblockUI();
+                                        if (response.status == 'error') {
+                                            swal({
+                                                title: 'Error',
+                                                text: response.message,
+                                                icon: 'error'
+                                            });
+                                        } else {
+                                            swal({
+                                                title: 'Success',
+                                                text: response.message,
+                                                icon: 'success'
+                                            });
+                                        }
+                                    },
+                                    error: function () {
+                                        $.unblockUI();
+                                        swal({
+                                            title: 'Error',
+                                            text: 'Failed to send parent email. Please try again.',
+                                            icon: 'error'
+                                        });
+                                    }
+                                });
+                            });
                         });
                     </script>
                     <form action="" method="post" onsubmit="submit_form()">
@@ -119,6 +152,9 @@
                 <div class="tab-pane active" id="student_details">
                     <div class="card border-top-0">
                         <div class="card-body">
+                            <div class="text-right mb-3">
+                                <button id="send-parent-email" class="btn btn-primary btn-sm">Send Parent Email</button>
+                            </div>
                             <div class="card-text">
                                 {{student.asHTML|safe}}
                                 <hr>

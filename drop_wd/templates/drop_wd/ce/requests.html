@@ -20,17 +20,21 @@
                 {% include "cis/messages.html" with messages=messages %}
                 <ul class="nav nav-tabs">
                     <li class="nav-item">
-                        <a class="nav-link active" data-toggle="tab" href="#all">All {{page_title}}</a>
+                        <a class="nav-link active" data-toggle="tab"  href="#all">All {{page_title}}</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-toggle="tab"  href="#summary">Summary</a>
                     </li>
                 </ul>
-
                 <div class="tab-content">
-
-                    <div class="tab-pane active " id="all">
-                        {% include 'drop_wd/ce/requests_table.html' %}
-                    </div>
+                        <div class="tab-pane fade show active " id="all">
+                            {% include 'drop_wd/ce/requests_table.html' %}
+                        </div>
+                        <div class="tab-pane fade" id="summary">
+                            {% include 'drop_wd/ce/summary.html' with pending_signatures=pending_signatures %}
+                        </div>
                     <!-- end tab # records_active -->
-
+                    </div>
                 </div>
                 <!-- end tab-content -->
 

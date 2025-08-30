@@ -6,11 +6,27 @@ from django.shortcuts import render, get_object_or_404
 from django.views.decorators.clickjacking import xframe_options_exempt
 
 from rest_framework import viewsets
+from django.urls import reverse
+from django.core.mail import send_mail
+from django.db import transaction
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
 
 from cis.serializers.class_section import ClassSectionSerializer
 from cis.serializers.registration import StudentRegistrationSerializer
 
 from cis.models.term import Term
+from .settings.drop_wd_email import drop_wd_email as drop_wd_settings 
+from django.shortcuts import render
+from django.db.models import Count
+
+from django.core.exceptions import FieldError
+from django.db.models import Count
+from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from django.db.models import Count, F, Value
+from django.db.models.functions import Coalesce, Concat
 
 from cis.utils import (
     user_has_instructor_role,
@@ -33,10 +49,16 @@ from cis.menu import (
     draw_menu
 )
 from cis.forms.section import EditStudentRegistration
+from .forms import drop_wd_email
+
 
 from .models import DropWDRequest
 from .forms import DropWDRequestForm, DropWDSignatureForm, EditDropWDRequestForm, StudentDropWDRequestForm, RequestReviewForm
-from .serializers import DropWDRequestSerializer
+from .serializers import (
+    DropWDRequestSerializer,
+    DropWDMetricsSerializer,
+    GroupCountSerializer,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -55,6 +77,8 @@ class ClassRegistrationViewSet(viewsets.ReadOnlyModelViewSet):
             records = StudentRegistration.objects.filter(
                 class_section__term__id=term,
                 class_section__id=class_section
+            ).exclude(
+                id__in=DropWDRequest.objects.filter(registration__class_section__id=class_section).values_list('registration_id', flat=True)
             )
 
             if user_has_cis_role(user):
@@ -127,6 +151,172 @@ class DropWDRequestViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = DropWDRequestSerializer
     permission_classes = [INSTRUCTOR_user_only|CIS_user_only|HSADMIN_user_only|STUDENT_user_only]
 
+    # ------- helpers -------
+    def _counts_by_status(self, qs):
+        rows = (
+            qs.values("status")
+              .annotate(count=Count("id"))
+              .order_by("-count", "status")
+        )
+        return [{"key": r["status"], "label": r["status"], "count": r["count"]} for r in rows]
+
+    def _try_group(self, qs, key_field, label_field_candidates):
+        """
+        Attempt to group by `key_field` and one of `label_field_candidates` if present.
+        Falls back to key-only grouping when label fields don't exist.
+        Returns a list of {key, label, count}.
+        """
+        # Try each label field until one works
+        for label_field in label_field_candidates:
+            try:
+                rows = (
+                    qs.values(key_field, label_field)
+                      .annotate(count=Count("id"))
+                      .order_by("-count", key_field)
+                )
+                # If we got here, the label_field exists
+                out = []
+                for r in rows:
+                    out.append({
+                        "key": r.get(key_field),
+                        "label": r.get(label_field),
+                        "count": r["count"],
+                    })
+                return out
+            except FieldError:
+                continue
+
+        # Fallback: no label field—group by key only
+        rows = (
+            qs.values(key_field)
+              .annotate(count=Count("id"))
+              .order_by("-count", key_field)
+        )
+        return [{"key": r.get(key_field), "label": None, "count": r["count"]} for r in rows]
+
+    def _counts_by_teacher(self, qs):
+        # Teacher lives at registration -> class_section -> teacher
+        key = "registration__class_section__teacher_id"
+
+        # First, try common single-field labels via _try_group
+        label_candidates = [
+            "registration__class_section__teacher__user__last_name",
+            "registration__class_section__teacher__user__first_name",
+            # "registration__class_section__teacher__user__name",
+            "registration__class_section__teacher__user__email",
+        ]
+        out = self._try_group(qs, key, label_candidates)
+        if any(item.get("label") for item in out):
+            return out
+
+        # Fallback: build "First Last" via Concat; allows null-safe labeling
+        rows = (
+            qs.annotate(
+                _t_id=F("registration__class_section__teacher_id"),
+                _t_label=Concat(
+                    Coalesce(F("registration__class_section__teacher__user__first_name"), Value("")),
+                    Value(" "),
+                    Coalesce(F("registration__class_section__teacher__user__last_name"), Value("")),
+                ),
+            )
+            .values("_t_id", "_t_label")
+            .annotate(count=Count("id"))
+            .order_by("-count", "_t_label")
+        )
+        return [
+            {"key": r["_t_id"], "label": (r["_t_label"].strip() or None), "count": r["count"]}
+            for r in rows
+        ]
+    
+    def _counts_by_course(self, qs):
+        # Course lives at registration -> class_section -> course
+        key = "registration__class_section__course_id"
+        label_candidates = [
+            "registration__class_section__course__title",
+            "registration__class_section__course__name",
+            "registration__class_section__course__course_title",
+            "registration__class_section__course__course_name",
+            "registration__class_section__course__code",
+            "registration__class_section__course__number",
+        ]
+        return self._try_group(qs, key, label_candidates)
+
+    def _counts_by_highschool(self, qs):
+        # HighSchool lives at registration -> class_section -> highschool
+        key = "registration__class_section__highschool_id"
+        label_candidates = [
+            "registration__class_section__highschool__name",
+            "registration__class_section__highschool__title"
+        ]
+        return self._try_group(qs, key, label_candidates)
+
+    def _counts_by_pending_signatures(self, qs):
+        """Calculate pending signature counts based on configuration"""
+        from .settings.drop_wd_email import drop_wd_email as drop_wd_settings
+        configs = drop_wd_settings.from_db()
+        
+        pending_signatures = {}
+        
+        if 'student' in configs.get('signatures_required_from', []):
+            pending_signatures['student'] = qs.filter(
+                student_signature='Pending'
+            ).count()
+        
+        if 'parent' in configs.get('signatures_required_from', []):
+            pending_signatures['parent'] = qs.filter(
+                parent_signature='Pending'
+            ).count()
+        
+        if 'instructor' in configs.get('signatures_required_from', []):
+            pending_signatures['instructor'] = qs.filter(
+                instructor_signature='Pending'
+            ).count()
+
+        if 'highschool_admin' in configs.get('signatures_required_from', []):
+            pending_signatures['counselor'] = qs.filter(
+                counselor_signature='Pending'
+            ).count()
+        
+        return pending_signatures
+
+    # ------- combined metrics -------
+    @action(detail=False, methods=["get"], url_path="metrics")
+    def metrics(self, request, *args, **kwargs):
+        qs = self.filter_queryset(self.get_queryset())
+        
+        payload = {
+            "by_status": self._counts_by_status(qs),
+            "by_course": self._counts_by_course(qs),
+            "by_highschool": self._counts_by_highschool(qs),
+            "pending_signatures": self._counts_by_pending_signatures(qs),
+        }
+        return Response(DropWDMetricsSerializer(payload).data)
+
+    @action(detail=False, methods=["get"], url_path="by-teacher")
+    def by_teacher(self, request, *args, **kwargs):
+        qs = self.filter_queryset(self.get_queryset())
+        data = self._counts_by_teacher(qs)
+        return Response(GroupCountSerializer(data, many=True).data)
+    
+    # ------- individual endpoints (optional convenience) -------
+    @action(detail=False, methods=["get"], url_path="by-status")
+    def by_status(self, request, *args, **kwargs):
+        qs = self.filter_queryset(self.get_queryset())
+        data = self._counts_by_status(qs)
+        return Response(GroupCountSerializer(data, many=True).data)
+
+    @action(detail=False, methods=["get"], url_path="by-course")
+    def by_course(self, request, *args, **kwargs):
+        qs = self.filter_queryset(self.get_queryset())
+        data = self._counts_by_course(qs)
+        return Response(GroupCountSerializer(data, many=True).data)
+
+    @action(detail=False, methods=["get"], url_path="by-highschool")
+    def by_highschool(self, request, *args, **kwargs):
+        qs = self.filter_queryset(self.get_queryset())
+        data = self._counts_by_highschool(qs)
+        return Response(GroupCountSerializer(data, many=True).data)
+    
     def get_queryset(self):
         user = self.request.user
         term = self.request.GET.get('term', '').strip()
@@ -210,7 +400,7 @@ def submit_request(request):
     """
     Called when a new request is started. Could be initiated by teacher, counselor, or student
     """
-    template_name = 'drop_wd/start_request.html'
+    template_name = 'drop_wd/instructor/start_request.html'
     
     if request.method == 'POST':
         if user_has_student_role(request.user):
@@ -243,7 +433,7 @@ def submit_request(request):
             form = StudentDropWDRequestForm(student=request.user.student)
         else:
             form = DropWDRequestForm()
-
+ 
     return render(
         request,
         template_name,
@@ -252,50 +442,48 @@ def submit_request(request):
         }
     )
 
+@login_required
+@require_POST 
 def do_bulk_action(request):
-
-    action = request.GET.get('action')
-    ids = request.GET.getlist('ids[]')
+    action = request.POST.get('action')
+    ids = request.POST.getlist('ids[]')
     
-    if action == 'mark_as_approved':
-        if user_has_instructor_role(request.user):
-            reqs = DropWDRequest.objects.filter(
-                id__in=ids,
-            )
+    if not ids:
+        return JsonResponse({'message': 'No records were selected.', 'status': 'error'}, status=400)
 
-            reqs.update(
-                instructor_signature='Approved'
-            )
-            return JsonResponse({
-                'message': 'Successfully marked as approved',
-                'status': 'success'
-            })
+    if action == 'mark_as_approved':
+        if not ids:
+            return JsonResponse({'message': 'No records were selected.', 'status': 'error'}, status=400)
+        
+        if user_has_instructor_role(request.user):
+            reqs = DropWDRequest.objects.filter(id__in=ids)
+            reqs.update(instructor_signature='Approved')
+            return JsonResponse({'message': 'Successfully marked as approved', 'status': 'success'})
         
         elif user_has_highschool_admin_role(request.user):
-            reqs = DropWDRequest.objects.filter(
-                id__in=ids,
-            )
-
-            reqs.update(
-                counselor_signature='Approved'
-            )
-            return JsonResponse({
-                'message': 'Successfully marked as approved',
-                'status': 'success'
-            })
+            reqs = DropWDRequest.objects.filter(id__in=ids)
+            reqs.update(counselor_signature='Approved')
+            return JsonResponse({'message': 'Successfully marked as approved', 'status': 'success'})
         
         elif user_has_student_role(request.user):
-            reqs = DropWDRequest.objects.filter(
-                id__in=ids,
-            )
+            reqs = DropWDRequest.objects.filter(id__in=ids)
+            reqs.update(student_signature='Approved')
+            return JsonResponse({'message': 'Successfully marked as approved', 'status': 'success'})
+        
+        return JsonResponse({'message': 'You do not have permission to perform this action.', 'status': 'error'}, status=403)
 
-            reqs.update(
-                student_signature='Approved'
-            )
-            return JsonResponse({
-                'message': 'Successfully marked as approved',
-                'status': 'success'
-            })
+    elif action == 'delete_requests':
+        if not user_has_highschool_admin_role(request.user) and not request.user.is_staff:
+            return JsonResponse({'message': 'You do not have permission to perform this action.', 'status': 'error'}, status=403)
+        
+        try:
+            requests_to_delete = DropWDRequest.objects.filter(id__in=ids)
+            deleted_count, _ = requests_to_delete.delete()
+            return JsonResponse({'message': f'Successfully deleted {deleted_count} request(s).', 'status': 'success'})
+        except Exception as e:
+            return JsonResponse({'message': f'An error occurred: {str(e)}', 'status': 'error'}, status=500)
+
+    return JsonResponse({'message': 'Invalid action specified.', 'status': 'error'}, status=400)
 
 @xframe_options_exempt
 def drop_request(request, record_id):
@@ -642,3 +830,90 @@ def parent_signature(request, record_id):
             }
         })
 parent_signature.login_required = False
+
+@require_POST
+def send_parent_email(request, record_id):
+    """
+    Sends an approval email to the parent for a specific Drop/WD request.
+    """
+    try:
+        
+        record = get_object_or_404(DropWDRequest, pk=record_id)
+    
+        if record.record_needs_parent_approval():
+            record.request_parent_approval_notification()
+            
+            return JsonResponse({
+                'status': 'success', 
+                'message': 'Parent approval email sent successfully.'
+            })
+        else:
+            return JsonResponse({
+                'status': 'info', 
+                'message': 'Parent approval is not required for this request.'
+            })
+
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error', 
+            'message': f'An error occurred: {str(e)}'
+        })
+
+def drop_summary_view(request):
+    """
+    Retrieves and summarizes data on course drop requests for a staff dashboard.
+    """
+    terms = Term.objects.all().order_by('-code')
+    selected_term = request.GET.get('term_id')
+    if not selected_term and terms.exists():
+        selected_term = terms.first().id
+    
+    configs = drop_wd_settings.from_db()
+
+    base_queryset = DropWDRequest.objects.filter(
+        registration__class_section__term__id=selected_term
+    )
+    
+    user = request.user
+    if user_has_highschool_admin_role(user):
+        try:
+            hsadmin = HSAdministrator.objects.get(user__id=user.id)
+            highschools = hsadmin.get_highschools()
+            base_queryset = base_queryset.filter(
+                registration__student__highschool__id__in=highschools.values_list('id', flat=True)
+            )
+        except HSAdministrator.DoesNotExist:
+            base_queryset = DropWDRequest.objects.none()
+    elif user_has_cis_role(user):
+        pass
+    else:
+        return render(request, '403.html', status=403)
+
+    processed_drops = base_queryset.filter(status='processed').count()
+    requested_drops = base_queryset.filter(status='requested').count()
+    
+    drops_by_high_school = base_queryset.filter(status__in=['processed', 'requested']).values(
+        'registration__student__highschool__name'
+    ).annotate(
+        total=Count('id')
+    ).order_by('-total')
+    
+    drops_by_course = base_queryset.filter(status__in=['processed', 'requested']).values(
+        'registration__class_section__course__name'
+    ).annotate(
+        total=Count('id')
+    ).order_by('-total')
+
+    menu = draw_menu(cis_menu, 'students', 'drop_wd_requests', 'ce')
+    context = {
+        'menu': menu,
+        'processed_drops': processed_drops,
+        'requested_drops': requested_drops,
+        'drops_by_high_school': drops_by_high_school,
+        'drops_by_course': drops_by_course,
+        'term_settings': configs,
+        'terms': terms,
+        'selected_term': selected_term,
+    }
+
+    return render(request, 'drop_wd/ce/summary.html', context)

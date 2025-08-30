@@ -285,7 +285,8 @@ class DropWDRequestForm(forms.Form):
     registration = forms.ModelChoiceField(
         queryset=None,
         label='Student',
-        empty_label="Select a Class Section"
+        empty_label="Select a Class Section",
+        help_text="Only students without drop requests will be displayed"
     )
 
     note = forms.CharField(
@@ -441,7 +442,9 @@ class StudentDropWDRequestForm(DropWDRequestForm, forms.Form):
         self.fields['registration'] = StudentRegistrationChoiceField(
             label='Class Registrations',
             queryset = StudentRegistration.objects.filter(
-                student=student
+                student=student            
+            ).exclude(
+                id__in=DropWDRequest.objects.filter(registration__student=student).values_list('registration_id', flat=True)
             ).order_by('-created_on')
         )
 

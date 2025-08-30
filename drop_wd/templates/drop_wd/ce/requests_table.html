@@ -2,12 +2,61 @@
 <script>
     var table_drop_wd_requests;
    
+    window.refreshTable = function () {
+        var selectedRows = table_drop_wd_requests.rows({ selected: true });
+        selectedRows.deselect();
+        table_drop_wd_requests.ajax.reload(null, false)
+    };
 
-    setInterval(function () {
-
-        if (!table_drop_wd_requests.rows('.selected').any())
+    setInterval(function() {
+        var selectedRows = table_drop_wd_requests.rows({ selected: true });
+        if(selectedRows.count() <= 0) {
             table_drop_wd_requests.ajax.reload(null, false);
-    }, 10000 * 60);
+        }
+    }, 5000 * 60);
+
+    function do_bulk_action(action, dt) {
+        if (!dt.rows('.selected').any()) {
+            alert("Please select one or more records to perform this action.");
+            return;
+        }
+
+        let selectedRows = dt.rows({ selected: true });
+        let data = {
+            'action': action,
+            'ids[]': selectedRows.ids().toArray(),
+            'csrfmiddlewaretoken': $('[name="csrfmiddlewaretoken"]').val()
+        };
+        
+        $(dt.table().container()).block({
+            message: 'Processing...',
+            css: { border: 'none', padding: '15px', backgroundColor: '#000', '-webkit-border-radius': '10px', '-moz-border-radius': '10px', opacity: .5, color: '#fff' }
+        });
+
+        let url = "{% url 'ce_drop_wd:bulk_actions' %}";
+
+        $.ajax({
+            type: 'POST',
+            url: url,
+            data: data,
+            success: function(response) {
+                alert(response.message);
+                dt.ajax.reload(null, false);
+            },
+            error: function(xhr, status, error) {
+                let errorMessage = "An unknown error occurred.";
+                if (xhr.responseJSON && xhr.responseJSON.message) {
+                    errorMessage = xhr.responseJSON.message;
+                } else if (xhr.responseText) {
+                    errorMessage = "Server error: " + xhr.responseText;
+                }
+                alert(errorMessage);
+            },
+            complete: function() {
+                $(dt.table().container()).unblock();
+            }
+        });
+    }
 
     $(document).ready(function () {
         $('#records_drop_wd_requests thead tr').clone(true).appendTo( '#records_drop_wd_requests thead' );
@@ -46,7 +95,6 @@
         {% elif type == 'course' %}
             baseURL += "&course_id=" + "{{record.id}}"
         {% endif %}
-
         $(document).on("change", "form#all_req_filter :input", function () {
             load_data();
         })
@@ -57,33 +105,90 @@
 
             table_drop_wd_requests.ajax.url(newURL).load()
         }
-
+        
         table_drop_wd_requests = $('#records_drop_wd_requests')
             .DataTable({
-                dom: 'B<"float-left mt-3 mb-3"l><"float-right mt-3"f><"row clear">rt<"row"<"col-6"i><"col-6 float-right"p>>',
-                buttons: [
-                    {
-                        extend: 'csv', className: 'btn btn-sm btn-primary text-white text-light',
-                        text: '<i class="fas fa-file-csv text-white"></i>&nbsp;CSV',
-                        titleAttr: 'Export results to CSV'
-                    },
-                    {
-                        extend: 'print', className: 'btn btn-sm btn-primary text-white text-light',
-                        text: '<i class="fas fa-print text-white"></i>&nbsp;Print',
-                        titleAttr: 'Print'
-                    },
-                ],
-                ajax: baseURL + '&' + $('form.filter').serialize(),
-                serverSide: true,
-                processing: true,
-                stateSave: true,
-                language: {
-                    'loadingRecords': '&nbsp;',
+            initComplete: function () {
+                this.api().columns().every(function () {
+                    let column = this;
+                    let footer = column.footer(); 
+                    if (footer) { 
+                        let title = footer.textContent;
+                        if(title !== '') {
+                        let input = document.createElement('input');
+                        input.className = 'form-control';
+                        input.placeholder = "Search " + title;
+                        column.footer().replaceChildren(input);
+                        input.addEventListener('keyup', $.debounce(1500,() => {
+                            if (column.search() !== this.value) {
+                                column.search(input.value).draw();
+                            }
+                        }));
+                    }
+            }});
+                var state = this.api().state.loaded();
+                if (state) {
+                    this.api().columns().eq(0).each(function (colIdx) {
+                        var colSearch = state.columns[colIdx].search;
+                        if (colSearch.search) {
+                            $('input', this.column(colIdx).footer()).val(colSearch.search);
+                        }
+                    });
+                }
+            },
+            searchDelay: 1500,
+            columnDefs: [
+                {
+                    orderable: false,
+                    className: 'select-checkbox',
+                    targets: 0
+                }
+            ],
+            select: {
+                style: 'os',
+                selector: 'td:first-child'
+            },
+            rowId: 'id',
+            dom: 'B<"float-left mt-3 mb-3"l><"float-right mt-3"f><"row clear">rt<"row"<"col-6"i><"col-6 float-right"p>>',
+            buttons: [
+                {
+                    extend: 'csv', className: 'btn btn-sm btn-primary text-white text-light',
+                    text: '<i class="fas fa-file-csv text-white"></i>&nbsp;CSV',
+                    titleAttr: 'Export results to CSV'
                 },
-                order: [[0, 'desc']],
-                'lengthMenu': [30, 50, 100],
-                'columns': [
-                    null,
+                {
+                    extend: 'print', className: 'btn btn-sm btn-primary text-white text-light',
+                    text: '<i class="fas fa-print text-white"></i>&nbsp;Print',
+                    titleAttr: 'Print'
+                },
+                {
+                    className: 'btn btn-sm btn-danger text-white text-light',
+                    text: '<i class="fas fa-trash-alt text-white"></i>&nbsp;Delete Selected',
+                    titleAttr: 'Delete Selected Records',
+                    action: function ( e, dt, node, config ) {
+                        do_bulk_action('delete_requests', dt);
+                    }
+                }
+            ],
+            orderCellsTop: true,
+            fixedHeader: true,
+            ajax: baseURL + '&' + $('form.filter').serialize(),
+            serverSide: true,
+            processing: true,
+            language: {
+                'loadingRecords': '&nbsp;',
+            },
+            'lengthMenu': [30, 50, 100],
+            'order': [
+                [1, 'desc']
+            ],
+            'columns': [
+                    { 'searchable': false, 'orderable': false, 'render': function (data, type, row, meta) { return '' } },
+                    {
+                                        'render': function (data, type, row, meta) {
+                                            return row.created_on
+                                        }
+                                    },
                     {
                         'render': function (data, type, row, meta) {
                             return row.registration.class_section.term.label
@@ -158,7 +263,6 @@
             }
             );
     });
-
 </script>
 <div class="bg-white border border-top-0">
     <div class="col-12 pt-3 mb-3">
@@ -167,7 +271,7 @@
                 <div class="card">
                     <div class="card-body bg-gray-200">
                         <form id="all_req_filter" class="form-inline float-right filter">
-                            <div class="form-row">
+                            {% csrf_token %}<div class="form-row">
                                 <div class="col">
                                     <div class="float-right">
                                         <select class="form-control mt-2" name="term">
@@ -188,9 +292,9 @@
         <table id="records_drop_wd_requests" class="table table-striped responsive" style="width:100%">
             <thead>
                 <tr>
-                    <th data-data="created_on" data-name="created_on">
+                    <th></th><th data-data="created_on" data-name="created_on">
                         Submitted On
-                    </th>
+                    </th> 
                     <th searchable="1" data-data="registration.class_section.term.code"
                         data-name="registration.class_section.term.code">Term
                     </th>
@@ -209,7 +313,7 @@
                     <th  searchable="1" data-data="status" data-name='status'>Status</th>
                     <!-- <th data-data="has_student_signature" data-name="has_student_signature">
                         Signatures</th> -->
-                    <th data-data="id" data-name='id'><span class="sr-only">Actions</span></th>
+                    <th data-data="id" data-name='id'>Actions</th>
                 </tr>
             </thead>
         </table>

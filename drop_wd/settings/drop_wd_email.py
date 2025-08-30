@@ -14,6 +14,7 @@ from cis.models.term import Term, AcademicYear
 from cis.models.settings import Setting
 
 from cis.validators import validate_email_list, validate_html_short_code, validate_json
+from cis.models.term import Term
 
 class SettingForm(forms.Form):
 
@@ -38,6 +39,13 @@ class SettingForm(forms.Form):
         ],
         required=False,
         label='Who can start new Request',
+        widget=forms.CheckboxSelectMultiple
+    )
+
+    terms = forms.MultipleChoiceField(
+        choices=[],
+        label='Term(s)',
+        help_text='Select term(s) for which drop is allowed',
         widget=forms.CheckboxSelectMultiple
     )
 
@@ -138,6 +146,9 @@ class SettingForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        term_choices = [(str(term.id), str(term)) for term in Term.objects.all()]
+        self.fields['terms'].choices = term_choices
+
     def _to_python(self):
         """
         Return dict of form elements from $_POST
@@ -145,6 +156,7 @@ class SettingForm(forms.Form):
         return {
             'is_active': self.cleaned_data['is_active'],
             'start_new_request': self.cleaned_data['start_new_request'],
+            'terms': self.cleaned_data['terms'],
             'intro': self.cleaned_data['intro'],
             'submit_new_intro': self.cleaned_data['submit_new_intro'],
             'signatures_required_from': self.cleaned_data['signatures_required_from'],
