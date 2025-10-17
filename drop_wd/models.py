@@ -297,26 +297,27 @@ class DropWDRequest(models.Model):
         if 'parent' in email_settings.get('notification_list', []):
             # if instance.has_parent_signed:
                 try:
-                    if validate_email(instance.registration.student.parent_email):
-                        to.append(
-                            instance.registration.student.parent_email
-                        )
+                    validate_email(instance.registration.student.parent_email)
+                    to.append(
+                        instance.registration.student.parent_email
+                    )
                 except:
                     ...
 
         if 'instructor' in email_settings.get('notification_list', []):
             try:
-                if validate_email(instance.registration.class_section.teacher.user.email):
-                    to.append(
-                        instance.registration.class_section.teacher.user.email
-                    )
+                validate_email(instance.registration.class_section.teacher.user.email)
+                to.append(
+                    instance.registration.class_section.teacher.user.email
+                )
             except:
                 ...
 
         if 'highschool_admin' in email_settings.get('notification_list', []):
             try:
 
-                if instance.registration.reviewer and validate_email(instance.registration.reviewer.user.email):
+                if instance.registration.reviewer:
+                    validate_email(instance.registration.reviewer.user.email)
                     to.append(
                         instance.registration.reviewer.user.email
                     )
@@ -324,8 +325,12 @@ class DropWDRequest(models.Model):
                 ...
     
         if instance.created_by:
-            if validate_email(instance.created_by.email) and instance.created_by.email not in to:
-                to.append(instance.created_by.email)
+            if instance.created_by.email not in to:
+                try:
+                    validate_email(instance.created_by.email)
+                    to.append(instance.created_by.email)
+                except:
+                    ...
 
         template = get_template('cis/email.html')
         html_body = template.render({
@@ -381,13 +386,13 @@ class DropWDRequest(models.Model):
         to = []
 
         if 'parent' in email_settings.get('notification_list', []):
-                try:
-                    if validate_email(instance.registration.student.parent_email):
-                        to.append(
-                            instance.registration.student.parent_email
-                        )
-                except:
-                    ...
+            try:
+                validate_email(instance.registration.student.parent_email)
+                to.append(
+                    instance.registration.student.parent_email
+                )
+            except:
+                ...
 
         template = get_template('cis/email.html')
         html_body = template.render({
@@ -463,19 +468,19 @@ class DropWDRequest(models.Model):
         
         if 'parent' in email_settings.get('notification_list', []):    
             try:
-                if validate_email(instance.registration.student.parent_email):
-                    to.append(
-                        instance.registration.student.parent_email
-                    )
+                validate_email(instance.registration.student.parent_email)
+                to.append(
+                    instance.registration.student.parent_email
+                )
             except:
                 ...
 
         if 'instructor' in email_settings.get('notification_list', []):
             try:
-                if validate_email(instance.registration.class_section.teacher.user.email):
-                    to.append(
-                        instance.registration.class_section.teacher.user.email
-                    )
+                validate_email(instance.registration.class_section.teacher.user.email)
+                to.append(
+                    instance.registration.class_section.teacher.user.email
+                )
             except:
                 ...
     
