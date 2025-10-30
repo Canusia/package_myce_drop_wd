@@ -153,7 +153,11 @@
                     <div class="card border-top-0">
                         <div class="card-body">
                             <div class="text-right mb-3">
+                                {% if record.record_needs_parent_approval %}
                                 <button id="send-parent-email" class="btn btn-primary btn-sm">Send Parent Email</button>
+                                <button id="copy-parent-link" class="btn btn-default btn-sm copy-clipboard" data-clipboard-target='#copy_to'>Copy Parent Link</button><br>
+                                <span style="color: white;" id="copy_to">{{record.parent_approval_url}}</span>
+                                {% endif %}
                             </div>
                             <div class="card-text">
                                 {{student.asHTML|safe}}
