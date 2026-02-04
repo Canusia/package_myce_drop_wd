@@ -154,7 +154,10 @@ class EditDropWDRequestForm(EditStudentRegistration, forms.Form):
         student_registration = StudentRegistration.objects.get(
             pk=record.registration.id
         )
-        student_registration = super().save(student_registration)
+        try:
+            student_registration = super().save(request, student_registration)
+        except:
+            student_registration = super().save(student_registration)
 
         record.status = self.cleaned_data['request_status']
         record.ce_note = self.cleaned_data.get('ce_note')
