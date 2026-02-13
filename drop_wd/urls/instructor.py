@@ -28,7 +28,7 @@ for router_key in ROUTER_VS.keys():
     router.register(
         router_key,
         ROUTER_VS[router_key],
-        basename=app_name
+        basename=router_key
     )
 
 urlpatterns = [
