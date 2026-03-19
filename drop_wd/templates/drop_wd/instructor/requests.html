@@ -41,7 +41,13 @@
                         <div class="card border-top-0">
                             <div class="card-body">
                                 {{submit_new_intro|safe}}
-                                {% include 'drop_wd/instructor/start_request.html' %}
+                                {% if drops_permitted %}
+                                    {% include 'drop_wd/instructor/start_request.html' %}
+                                {% else %}
+                                    <div class="alert alert-warning mt-3">
+                                        Drop/WD requests are not permitted at this time.
+                                    </div>
+                                {% endif %}
                             </div>
                         </div>
                     </div>

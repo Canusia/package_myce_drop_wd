@@ -34,7 +34,7 @@ class SettingForm(forms.Form):
         choices=[],
         required=False,
         label='Allowed Terms',
-        help_text='Only registrations in these terms can have drop requests submitted. Leave empty to allow all terms.',
+        help_text='Only registrations in these terms can have drop requests submitted. If no terms are selected, drop requests will not be permitted.',
         widget=forms.CheckboxSelectMultiple
     )
 

@@ -518,10 +518,11 @@ def requests(request):
             'drop_wd_intro': page_settings.get('intro'),
             'submit_new_intro': page_settings.get('submit_new_intro'),
             'can_submit_new_request': can_submit_new_request,
+            'drops_permitted': bool(drop_wd_settings.get_allowed_terms()),
             'needs_to_approve': needs_to_approve,
             'url_prefix': url_prefix,
             # this is hard-coded
-            'api_url': '/instructor/drop_wd/api/requests/?format=datatables',            
+            'api_url': '/instructor/drop_wd/api/requests/?format=datatables',
             'intro': intro,
             'submit_new_drop_request_form': form,
             'terms': Term.objects.all().order_by('-code')
