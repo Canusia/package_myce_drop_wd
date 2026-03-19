@@ -313,7 +313,6 @@ class DropWDRequest(models.Model):
             'message': text_body
         })
 
-        print(text_body)
         if getattr(settings, 'DEBUG', True) or email_settings.get('is_active') == 'Debug':
             to = ['kadaji@gmail.com']
 
