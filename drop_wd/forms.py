@@ -157,10 +157,22 @@ class EditDropWDRequestForm(EditStudentRegistration, forms.Form):
         student_registration = super().save(student_registration)
 
         record.status = self.cleaned_data['request_status']
-        record.ce_note = self.cleaned_data.get('ce_note')
-        
+        ce_note = self.cleaned_data.get('ce_note')
+        record.ce_note = ce_note
+
         record.processed_by = request.user
         record.save()
+
+        if ce_note:
+            record.registration.student.add_note(
+                createdby=request.user,
+                note=ce_note,
+                meta={
+                    'type': 'private',
+                    'private_note': ce_note,
+                    'registration_id': str(record.registration.id)
+                }
+            )
 
         return record
 
@@ -227,19 +239,39 @@ class RequestReviewForm(forms.Form):
         if not record.notes:
             record.notes = {}
 
+        note_text = data.get('note', '')
+
         if user_has_instructor_role(request.user):
             record.instructor_signature = status
-            record.notes['instructor_note'] = data.get('note', '')
+            record.notes['instructor_note'] = note_text
+            note_type = 'instructor_note'
 
         elif user_has_highschool_admin_role(request.user):
             record.counselor_signature = status
-            record.notes['counselor_note'] = data.get('note', '')
+            record.notes['counselor_note'] = note_text
+            note_type = 'counselor_note'
 
         elif user_has_student_role(request.user):
             record.student_signature = status
-            record.notes['student_note'] = data.get('note', '')
+            record.notes['student_note'] = note_text
+            note_type = 'student_note'
+
+        else:
+            note_type = 'note'
 
         record.save()
+
+        if note_text:
+            record.registration.student.add_note(
+                createdby=request.user,
+                note=note_text,
+                meta={
+                    'type': 'private',
+                    note_type: note_text,
+                    'registration_id': str(record.registration.id)
+                }
+            )
+
         return record
 
 class DropWDSignatureForm(forms.Form):
