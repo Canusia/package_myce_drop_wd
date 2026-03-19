@@ -8,7 +8,8 @@ from rest_framework import routers
 from ..views import (
     requests,
     drop_request,
-    delete_record
+    delete_record,
+    send_processed_email
 )
 
 app_name = 'ce_drop_wd'
@@ -28,5 +29,10 @@ urlpatterns = [
         'request/delete/<uuid:record_id>',
         delete_record,
         name='delete_record'
+    ),
+    path(
+        'request/send_processed_email/<uuid:record_id>',
+        send_processed_email,
+        name='send_processed_email'
     ),
 ]

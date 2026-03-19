@@ -436,6 +436,21 @@ def drop_request(request, record_id):
             'registration': record.registration
         })
 
+def send_processed_email(request, record_id):
+    record = get_object_or_404(DropWDRequest, pk=record_id)
+    try:
+        record.send_processed_notification()
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Processed notification email sent successfully.'
+        })
+    except Exception as e:
+        logger.error(e)
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Unable to send email. ' + str(e)
+        }, status=400)
+
 def delete_record(request, record_id):
     record = get_object_or_404(DropWDRequest, pk=record_id)
     
