@@ -36,7 +36,7 @@ def status_changed(sender, instance, **kwargs):
                 user = current_request().user
             else:
                 user = None
-            
+
             instance.registration.student.add_note(
                 createdby=user,
                 note=f'Updating drop/wd request for {instance.registration.class_section} to {instance.sexy_status}',
@@ -51,7 +51,8 @@ def status_changed(sender, instance, **kwargs):
         status_changed_on[status + "_on"] = datetime.now().strftime('%m/%d/%Y %I:%M:%S %p')
         instance.status_changed_on = status_changed_on
 
-        instance.send_processed_notification()
+        if status == 'processed':
+            instance.send_processed_notification()
             
 @receiver(post_save, sender=DropWDRequest)
 def create_new_request(sender, instance, created, **kwargs):

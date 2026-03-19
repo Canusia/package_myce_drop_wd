@@ -267,42 +267,46 @@ class DropWDRequest(models.Model):
         text_body = email_template.render(context)
         to = []
 
-        if 'student' in email_settings.get('notification_list', []):
-            to.append(
-                instance.registration.student.user.email
-            )
-        
-        if 'parent' in email_settings.get('notification_list', []):    
+        if instance.created_by:
             try:
-                if validate_email(instance.registration.student.parent_email):
-                    to.append(
-                        instance.registration.student.parent_email
-                    )
+                validate_email(instance.created_by.email)
+                if instance.created_by.email not in to:
+                    to.append(instance.created_by.email)
+            except:
+                ...
+
+        if 'student' in email_settings.get('notification_list', []):
+            try:
+                validate_email(instance.registration.student.user.email)
+                if instance.registration.student.user.email not in to:
+                    to.append(instance.registration.student.user.email)
+            except:
+                ...
+
+        if 'parent' in email_settings.get('notification_list', []):
+            try:
+                validate_email(instance.registration.student.parent_email)
+                if instance.registration.student.parent_email not in to:
+                    to.append(instance.registration.student.parent_email)
             except:
                 ...
 
         if 'instructor' in email_settings.get('notification_list', []):
             try:
-                if validate_email(instance.registration.class_section.teacher.user.email):
-                    to.append(
-                        instance.registration.class_section.teacher.user.email
-                    )
+                validate_email(instance.registration.class_section.teacher.user.email)
+                if instance.registration.class_section.teacher.user.email not in to:
+                    to.append(instance.registration.class_section.teacher.user.email)
             except:
                 ...
 
         if 'highschool_admin' in email_settings.get('notification_list', []):
             try:
-
-                if instance.registration.reviewer and validate_email(instance.registration.reviewer.user.email):
-                    to.append(
-                        instance.registration.reviewer.user.email
-                    )
+                if instance.registration.reviewer:
+                    validate_email(instance.registration.reviewer.user.email)
+                    if instance.registration.reviewer.user.email not in to:
+                        to.append(instance.registration.reviewer.user.email)
             except:
                 ...
-    
-        if instance.created_by:
-            if validate_email(instance.created_by.email) and instance.created_by.email not in to:
-                to.append(instance.created_by.email)
 
         template = get_template('cis/email.html')
         html_body = template.render({
