@@ -439,6 +439,19 @@ def drop_request(request, record_id):
 def send_processed_email(request, record_id):
     record = get_object_or_404(DropWDRequest, pk=record_id)
     try:
+        private_note = request.POST.get('private_note', '').strip()
+
+        if private_note:
+            record.registration.student.add_note(
+                createdby=request.user,
+                note=private_note,
+                meta={
+                    'type': 'private',
+                    'private_note': private_note,
+                    'registration_id': str(record.registration.id)
+                }
+            )
+
         record.send_processed_notification()
         return JsonResponse({
             'status': 'success',

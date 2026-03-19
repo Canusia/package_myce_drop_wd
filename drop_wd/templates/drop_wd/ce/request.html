@@ -81,14 +81,18 @@
                             jQuery(document).ready(function ($) {
                                 $("a.send-processed-email").on("click", function (e) {
                                     e.preventDefault();
-                                    if (!confirm("Send the processed notification email to all recipients?"))
-                                        return;
+                                    $("#modal-send-processed-email").modal("show");
+                                });
+
+                                $("#frm-send-processed-email").on("submit", function (e) {
+                                    e.preventDefault();
                                     $.blockUI();
-                                    $.ajax({
-                                        type: 'GET',
+                                    $.post({
                                         url: "{% url 'ce_drop_wd:send_processed_email' record.id %}",
+                                        data: $(this).serialize(),
                                         success: function (response) {
                                             $.unblockUI();
+                                            $("#modal-send-processed-email").modal("hide");
                                             swal({
                                                 title: response.status === 'success' ? 'Sent' : 'Error',
                                                 text: response.message,
@@ -209,4 +213,30 @@
     </div> <!-- end row -->
 
 </main>
+
+<div class="modal fade" id="modal-send-processed-email" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Send Processed Email</h5>
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+            </div>
+            <form id="frm-send-processed-email">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="private_note">Private Note <small class="text-muted">(optional)</small></label>
+                        <textarea class="form-control" id="private_note" name="private_note" rows="4"
+                            placeholder="Add a private note to the student record..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Send Email</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
