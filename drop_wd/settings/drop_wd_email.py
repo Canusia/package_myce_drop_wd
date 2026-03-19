@@ -137,7 +137,7 @@ class SettingForm(forms.Form):
         label='Request Received - Email',
         widget=forms.Textarea,
         validators=[validate_html_short_code],
-        help_text='Email template sent to CE Office. Customize with {{note}}, {{submitted_by_first_name}}, {{submitted_by_last_name}}, {{instructor_first_name}}, {{instructor_last_name}}, {{student_first_name}}, {{student_last_name}}, {{course_name}}, {{term}}. <a href="#" class="float-right" onClick="do_bulk_action(\'drop_wd_email\', \'email_to_cep\')" >See Preview</a>'
+        help_text='Email template sent to CE Office. Customize with {{submitted_by_first_name}}, {{submitted_by_last_name}}, {{course_name}}, {{class_section_number}}, {{note}}, {{instructor_first_name}}, {{instructor_last_name}}, {{student_first_name}}, {{student_last_name}}, {{term}}. <a href="#" class="float-right" onClick="do_bulk_action(\'drop_wd_email\', \'email_to_cep\')" >See Preview</a>'
     )
 
     form_field_messages = forms.CharField(

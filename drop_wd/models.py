@@ -343,6 +343,7 @@ class DropWDRequest(models.Model):
             'instructor_first_name': instance.registration.class_section.teacher.user.first_name,
             'instructor_last_name': instance.registration.class_section.teacher.user.last_name,
             'course_name': instance.registration.class_section.course,
+            'class_section_number': instance.registration.class_section.class_number,
             'term': instance.registration.class_section.term,
             'note': instance.note,
         })
