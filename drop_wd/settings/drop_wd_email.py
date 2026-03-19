@@ -30,6 +30,33 @@ class SettingForm(forms.Form):
         help_text='',
         widget=forms.Select(attrs={'class': 'col-md-4 col-sm-12'}))
 
+    allowed_terms = forms.MultipleChoiceField(
+        choices=[],
+        required=False,
+        label='Allowed Terms',
+        help_text='Only registrations in these terms can have drop requests submitted. Leave empty to allow all terms.',
+        widget=forms.CheckboxSelectMultiple
+    )
+
+    allowed_registration_statuses = forms.MultipleChoiceField(
+        choices=[],
+        required=False,
+        label='Allowed Registration Statuses',
+        help_text='Only registrations with these statuses can have drop requests submitted. Leave empty to allow all statuses.',
+        widget=forms.CheckboxSelectMultiple
+    )
+
+    allowed_class_section_statuses = forms.MultipleChoiceField(
+        choices=[
+            ('A', 'Active'),
+            ('X', 'Cancelled'),
+        ],
+        required=False,
+        label='Allowed Class Section Statuses',
+        help_text='Only class sections with these statuses will be shown when a term is selected. Leave empty to show all.',
+        widget=forms.CheckboxSelectMultiple
+    )
+
     start_new_request = forms.MultipleChoiceField(
         choices=[
             ('student', 'Student'),
@@ -123,6 +150,12 @@ class SettingForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        from cis.models.section import StudentRegistration
+        self.fields['allowed_terms'].choices = [
+            (str(t.id), str(t)) for t in Term.objects.all().order_by('-code')
+        ]
+        self.fields['allowed_registration_statuses'].choices = StudentRegistration.STATUS_OPTIONS
+
     def _to_python(self):
         """
         Return dict of form elements from $_POST
@@ -143,7 +176,10 @@ class SettingForm(forms.Form):
             'email_to_cep': self.cleaned_data['email_to_cep'],
 
             'form_field_messages': self.cleaned_data['form_field_messages'],
-            
+
+            'allowed_terms': self.cleaned_data['allowed_terms'],
+            'allowed_registration_statuses': self.cleaned_data['allowed_registration_statuses'],
+            'allowed_class_section_statuses': self.cleaned_data['allowed_class_section_statuses'],
         }
 
 
@@ -272,6 +308,18 @@ class drop_wd_email(SettingForm):
             return setting.value
         except Setting.DoesNotExist:
             return {}
+
+    @classmethod
+    def get_allowed_terms(cls):
+        return cls.from_db().get('allowed_terms', [])
+
+    @classmethod
+    def get_allowed_registration_statuses(cls):
+        return cls.from_db().get('allowed_registration_statuses', [])
+
+    @classmethod
+    def get_allowed_class_section_statuses(cls):
+        return cls.from_db().get('allowed_class_section_statuses', [])
 
     def run_record(self):
         try:

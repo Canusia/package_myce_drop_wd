@@ -24,11 +24,11 @@ ROUTER_VS = {
     'requests': DropWDRequestViewSet,
 }
 
-for router_key in ROUTER_VS.keys():
+for router_key, viewset in ROUTER_VS.items():
     router.register(
         router_key,
-        ROUTER_VS[router_key],
-        basename=app_name
+        viewset,
+        basename=f'{app_name}_{router_key.replace("/", "_")}'
     )
 
 urlpatterns = [

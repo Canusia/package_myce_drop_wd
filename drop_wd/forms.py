@@ -337,7 +337,9 @@ class DropWDRequestForm(forms.Form):
                 field.label = mark_safe(field_attr.get('label', ''))
                 field.help_text = mark_safe(field_attr.get('help_text', ''))
 
-        self.fields['term'].queryset = Term.objects.all()
+        allowed_terms = drop_wd_email.get_allowed_terms()
+        term_qs = Term.objects.filter(id__in=allowed_terms) if allowed_terms else Term.objects.all()
+        self.fields['term'].queryset = term_qs
         self.fields['class_section'].queryset = ClassSection.objects.none()
         self.fields['registration'].queryset = StudentRegistration.objects.none()
 
@@ -370,6 +372,14 @@ class DropWDRequestForm(forms.Form):
             registration=regis
         ).exists():
             raise ValidationError('A request already exists for the selected registration')
+
+        allowed_statuses = drop_wd_email.get_allowed_registration_statuses()
+        if allowed_statuses and regis.status not in allowed_statuses:
+            raise ValidationError('Drop requests are not allowed for registrations with this status.')
+
+        allowed_terms = drop_wd_email.get_allowed_terms()
+        if allowed_terms and str(regis.class_section.term.id) not in allowed_terms:
+            raise ValidationError('Drop requests are not allowed for registrations in this term.')
 
         return regis
 
@@ -406,11 +416,18 @@ class StudentDropWDRequestForm(DropWDRequestForm, forms.Form):
         del self.fields['class_section']
         del self.fields['term']
 
+        allowed_terms = drop_wd_email.get_allowed_terms()
+        allowed_statuses = drop_wd_email.get_allowed_registration_statuses()
+
+        registration_qs = StudentRegistration.objects.filter(student=student)
+        if allowed_terms:
+            registration_qs = registration_qs.filter(class_section__term__id__in=allowed_terms)
+        if allowed_statuses:
+            registration_qs = registration_qs.filter(status__in=allowed_statuses)
+
         self.fields['registration'] = StudentRegistrationChoiceField(
             label='Class Registrations',
-            queryset = StudentRegistration.objects.filter(
-                student=student
-            ).order_by('-created_on')
+            queryset=registration_qs.order_by('-created_on')
         )
 
         # field_labels = {}

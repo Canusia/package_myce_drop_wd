@@ -37,6 +37,7 @@ from cis.forms.section import EditStudentRegistration
 from .models import DropWDRequest
 from .forms import DropWDRequestForm, DropWDSignatureForm, EditDropWDRequestForm, StudentDropWDRequestForm, RequestReviewForm
 from .serializers import DropWDRequestSerializer
+from .settings.drop_wd_email import drop_wd_email as drop_wd_settings
 
 
 logger = logging.getLogger(__name__)
@@ -52,10 +53,15 @@ class ClassRegistrationViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
 
         try:
+            allowed_statuses = drop_wd_settings.get_allowed_registration_statuses()
+
             records = StudentRegistration.objects.filter(
                 class_section__term__id=term,
                 class_section__id=class_section
             )
+
+            if allowed_statuses:
+                records = records.filter(status__in=allowed_statuses)
 
             if user_has_cis_role(user):
                 pass
@@ -93,9 +99,14 @@ class ClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
 
         try:
+            allowed_section_statuses = drop_wd_settings.get_allowed_class_section_statuses()
+
             records = ClassSection.objects.filter(
                 term__id=term
             )
+
+            if allowed_section_statuses:
+                records = records.filter(status__in=allowed_section_statuses)
             if user_has_instructor_role(user):
                 records = records.filter(
                     teacher__user=user
@@ -211,7 +222,19 @@ def submit_request(request):
     Called when a new request is started. Could be initiated by teacher, counselor, or student
     """
     template_name = 'drop_wd/start_request.html'
-    
+
+    if not (
+        user_has_cis_role(request.user) or
+        (user_has_instructor_role(request.user) and DropWDRequest.can_instructor_submit_request()) or
+        (user_has_highschool_admin_role(request.user) and DropWDRequest.can_administrator_submit_request()) or
+        (user_has_student_role(request.user) and DropWDRequest.can_student_submit_request())
+    ):
+        return JsonResponse({
+            'title': 'Not allowed',
+            'message': 'You are not allowed to submit drop requests.',
+            'status': 'error'
+        }, status=403)
+
     if request.method == 'POST':
         if user_has_student_role(request.user):
             form = StudentDropWDRequestForm(student=request.user.student, data=request.POST)
@@ -439,7 +462,7 @@ def requests(request):
     menu = {}
     intro = ''
 
-    from drop_wd.settings.drop_wd_email import drop_wd_email as drop_wd_settings
+    from .settings.drop_wd_email import drop_wd_email as drop_wd_settings
 
     page_settings = drop_wd_settings.from_db()
 
