@@ -50,6 +50,7 @@ class SettingForm(forms.Form):
         choices=[
             ('A', 'Active'),
             ('X', 'Cancelled'),
+            ('open', 'Open'),
         ],
         required=False,
         label='Allowed Class Section Statuses',
