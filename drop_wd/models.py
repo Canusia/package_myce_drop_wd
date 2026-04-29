@@ -251,7 +251,7 @@ class DropWDRequest(models.Model):
             return
 
         subject = email_settings.get('processed_email_subject')
-        email_template = Template(email_settings['processed_email'])
+        email_template = Template(email_settings.get('processed_email', 'drop processed email is not configured'))
         context = Context({
             'student_first_name': instance.registration.student.user.first_name,
             'student_last_name': instance.registration.student.user.last_name,
