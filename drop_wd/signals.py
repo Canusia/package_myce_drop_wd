@@ -60,7 +60,12 @@ def create_new_request(sender, instance, created, **kwargs):
     Send email to CE office when submitted
     """
     if created:
-        instance.send_received_notification()
+        # Notifications are a side-effect of saving the request and must never
+        # break the save itself (the row is already committed at post_save time).
+        try:
+            instance.send_received_notification()
+        except Exception as e:
+            print(e)
 
         try:
             if current_request():

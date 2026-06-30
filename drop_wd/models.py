@@ -243,6 +243,15 @@ class DropWDRequest(models.Model):
     def has_counselor_signed(self):
         return True if self.counselor_signature else False
 
+    def get_instructor_user(self):
+        """
+        Return the instructor's CustomUser for this request's class section,
+        or None when the section has no teacher (or the teacher has no user).
+        Notification email context must tolerate sections without a teacher.
+        """
+        teacher = self.registration.class_section.teacher
+        return teacher.user if teacher else None
+
     def send_processed_notification(self):
 
         instance = self
@@ -250,13 +259,15 @@ class DropWDRequest(models.Model):
         if email_settings.get('is_active') == 'No':
             return
 
+        instructor_user = instance.get_instructor_user()
+
         subject = email_settings.get('processed_email_subject')
         email_template = Template(email_settings.get('processed_email', 'drop processed email is not configured'))
         context = Context({
             'student_first_name': instance.registration.student.user.first_name,
             'student_last_name': instance.registration.student.user.last_name,
-            'instructor_first_name': instance.registration.class_section.teacher.user.first_name,
-            'instructor_last_name': instance.registration.class_section.teacher.user.last_name,
+            'instructor_first_name': instructor_user.first_name if instructor_user else '',
+            'instructor_last_name': instructor_user.last_name if instructor_user else '',
             'course_name': instance.registration.class_section.course,
             'request_status': instance.status,
             'registration_status': instance.registration.get_status,
@@ -331,7 +342,9 @@ class DropWDRequest(models.Model):
         email_settings = drop_wd_email.from_db()
         if email_settings.get('is_active') == 'No':
             return
-        
+
+        instructor_user = instance.get_instructor_user()
+
         # notify ce staff
         to = email_settings.get('email_address_to_cep').split(',')
 
@@ -343,8 +356,8 @@ class DropWDRequest(models.Model):
             'submitted_by_last_name': instance.created_by.last_name if instance.created_by else '-',
             'student_first_name': instance.registration.student.user.first_name,
             'student_last_name': instance.registration.student.user.last_name,
-            'instructor_first_name': instance.registration.class_section.teacher.user.first_name,
-            'instructor_last_name': instance.registration.class_section.teacher.user.last_name,
+            'instructor_first_name': instructor_user.first_name if instructor_user else '',
+            'instructor_last_name': instructor_user.last_name if instructor_user else '',
             'course_name': instance.registration.class_section.course,
             'class_section_number': instance.registration.class_section.class_number,
             'term': instance.registration.class_section.term,
@@ -408,8 +421,8 @@ class DropWDRequest(models.Model):
             'submitted_by_last_name': instance.created_by.last_name if instance.created_by else '-',
             'student_first_name': instance.registration.student.user.first_name,
             'student_last_name': instance.registration.student.user.last_name,
-            'instructor_first_name': instance.registration.class_section.teacher.user.first_name,
-            'instructor_last_name': instance.registration.class_section.teacher.user.last_name,
+            'instructor_first_name': instructor_user.first_name if instructor_user else '',
+            'instructor_last_name': instructor_user.last_name if instructor_user else '',
             'course_name': instance.registration.class_section.course,
             'term': instance.registration.class_section.term,
             'note': instance.note,
