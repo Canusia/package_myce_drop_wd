@@ -106,11 +106,19 @@
                     },
                     {
                         'render': function (data, type, row, meta) {
-                            let col = row.registration.class_section.class_number + "<br>";
-                                
+                            return row.registration.class_section.class_number
+                        }
+                    },
+                    {
+                        'render': function (data, type, row, meta) {
+                            return row.registration.class_section.section_number
+                        }
+                    },
+                    {
+                        'render': function (data, type, row, meta) {
                             if(row.registration.class_section.teacher !== null)
-                                col += row.registration.class_section.teacher.user.last_name + ", " + row.registration.class_section.teacher.user.first_name
-                            return col
+                                return row.registration.class_section.teacher.user.last_name + ", " + row.registration.class_section.teacher.user.first_name
+                            return ''
                         }
                     },
                     {
@@ -202,8 +210,14 @@
                     <th  searchable="1" data-data="registration.class_section.course.name"
                         data-name="registration.class_section.course.name">Course
                     </th>
-                    <th data-data="registration.class_section.class_number"
-                        data-name="registration.class_section.class_number">CRN / Instructor
+                    <th searchable="1" data-data="registration.class_section.class_number"
+                        data-name="registration.class_section.class_number">CRN / Class #
+                    </th>
+                    <th searchable="1" data-data="registration.class_section.section_number"
+                        data-name="registration.class_section.section_number">Section #
+                    </th>
+                    <th searchable="1" data-data="registration.class_section.teacher.user.last_name"
+                        data-name="registration.class_section.teacher.user.last_name,registration.class_section.teacher.user.first_name">Instructor
                     </th>
                     <th  searchable="0" data-data="approvals" data-name='approvals'>Approvals</th>
                     <th  searchable="1" data-data="status" data-name='status'>Status</th>
