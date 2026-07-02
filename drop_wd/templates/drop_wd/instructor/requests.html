@@ -106,6 +106,9 @@
                                             <th data-data="registration.class_section.class_number"
                                                 data-name="registration.class_section.class_number">Class No.
                                             </th>
+                                            <th data-data="registration.class_section.section_number"
+                                                data-name="registration.class_section.section_number">Section #
+                                            </th>
                                             <th data-data="approvals"
                                                 data-name="approvals">Approvals
                                             </th>
@@ -289,11 +292,16 @@
                                         // 'searchable': false,
                                     },
                                     {
-                                        
+
                                         // 'searchable': false,
                                     },
                                     {
-                                        'orderable': false,  
+                                        'render': function (data, type, row, meta) {
+                                            return row.registration.class_section.section_number
+                                        }
+                                    },
+                                    {
+                                        'orderable': false,
                                         'searchable': false
                                     },
                                     {
