@@ -1,0 +1,25 @@
+{% load static %}
+
+{% if config.filter_form %}{{ config.filter_form|safe }}{% endif %}
+
+<table id="{{ config.table_id }}" class="table table-striped responsive" style="width:100%">
+  <thead>
+    <tr>
+      {% for col in config.column_headers %}{{ col|safe }}{% endfor %}
+    </tr>
+  </thead>
+  {% if config.footer_search %}
+  <tfoot>
+    <tr>
+      {% for col in config.column_footers %}{{ col|safe }}{% endfor %}
+    </tr>
+  </tfoot>
+  {% endif %}
+</table>
+
+<script src="{% static 'drop_wd/js/requests_table.js' %}"></script>
+<script>
+  jQuery(function ($) {
+    initDropWdRequestsTable('#{{ config.table_id }}', {{ config.opts_json|safe }});
+  });
+</script>

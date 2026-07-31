@@ -537,7 +537,18 @@ def requests(request):
         can_submit_new_request = DropWDRequest.can_student_submit_request()
         needs_to_approve = DropWDRequest.needs_student_approval()
         url_prefix = 'student'
-    
+
+    # this is hard-coded (unchanged here — the endpoint stays the instructor one)
+    api_url = '/instructor/drop_wd/api/requests/?format=datatables'
+
+    from .services import get_requests_table_config
+    requests_table_config = get_requests_table_config().build_config(
+        variant='portal_approver' if needs_to_approve else 'portal',
+        api_url=api_url,
+        details_prefix=f'/{url_prefix}/drop_wd/request/',
+        filter_form_selector='#all_req_filter',
+    )
+
     return render(
         request,
         template, {
@@ -549,10 +560,10 @@ def requests(request):
             'drops_permitted': bool(drop_wd_settings.get_allowed_terms()),
             'needs_to_approve': needs_to_approve,
             'url_prefix': url_prefix,
-            # this is hard-coded
-            'api_url': '/instructor/drop_wd/api/requests/?format=datatables',
+            'api_url': api_url,
             'intro': intro,
             'submit_new_drop_request_form': form,
-            'terms': Term.objects.all().order_by('-code')
+            'terms': Term.objects.all().order_by('-code'),
+            'requests_table': requests_table_config,
         }
     )

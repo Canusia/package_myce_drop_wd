@@ -1,0 +1,28 @@
+<div class="bg-white border border-top-0">
+    <div class="col-12 pt-3 mb-3">
+        <div class="row">
+            <div class="col-md-12 mb-3">
+                <div class="card">
+                    <div class="card-body bg-gray-200">
+                        <form id="all_req_filter" class="form-inline float-right filter">
+                            <div class="form-row">
+                                <div class="col">
+                                    <div class="float-right">
+                                        <select class="form-control mt-2" name="term">
+                                            <option value="">Filter By Term</option>
+                                            {% for c in terms %}
+                                            <option value="{{c.id}}">{{c.label}} {{c.year}}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </form> <!-- end search form -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% include config.partial_template with config=config %}
+    </div>
+</div>
