@@ -7,6 +7,7 @@ from rest_framework import routers
 
 from ..views import (
     requests,
+    requests_summary,
     drop_request,
     delete_record,
     send_processed_email
@@ -19,6 +20,11 @@ urlpatterns = [
         'requests/',
         requests,
         name='requests'
+    ),
+    path(
+        'requests/summary/',
+        requests_summary,
+        name='requests_summary'
     ),
     path(
         'request/<uuid:record_id>',

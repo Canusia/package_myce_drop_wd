@@ -1,0 +1,58 @@
+{% comment %}
+CE Summary tab: term-filtered aggregates of Drop/WD requests.
+
+Data comes from ce_drop_wd:requests_summary as JSON and is rendered
+client-side, so the CSV and PDF buttons export every row rather than one
+page. See staticfiles/drop_wd/js/requests_summary.js.
+{% endcomment %}
+{% load static %}
+
+<div class="bg-white border border-top-0">
+  <div class="col-12 pt-3 mb-3">
+
+    <div class="card mb-3">
+      <div class="card-body bg-gray-200">
+        <form id="summary_filter" class="form-inline">
+          <label class="mr-2 mb-0" for="summary_terms">Term(s):</label>
+          <select id="summary_terms" name="term" class="form-control" multiple size="4">
+            {% for t in terms %}
+            <option value="{{ t.id }}">{{ t.label }} {{ t.year }}</option>
+            {% endfor %}
+          </select>
+          <small class="form-text text-muted ml-2">
+            Select none for all terms. Hold Ctrl (Cmd on Mac) to pick several.
+          </small>
+        </form>
+      </div>
+    </div>
+
+    <div class="row" id="summary_headline"></div>
+    <div id="summary_trend"></div>
+    <div id="summary_breakdowns"></div>
+
+  </div>
+</div>
+
+<style>
+  .dw-bar-track { background:#eaecf4; border-radius:.25rem; height:.5rem; width:100%; min-width:60px; }
+  .dw-bar-fill  { background:#4e73df; border-radius:.25rem; height:100%; }
+  .dw-trend     { display:flex; align-items:flex-end; gap:.5rem; height:140px; overflow-x:auto; }
+  .dw-trend-col { display:flex; flex-direction:column; justify-content:flex-end;
+                  align-items:center; height:100%; min-width:52px; flex:1; }
+  .dw-trend-bar { background:#4e73df; border-radius:.25rem .25rem 0 0; width:70%; }
+  .dw-trend-label { white-space:nowrap; font-size:.7rem; margin-top:.25rem; }
+</style>
+
+<script src="{% static 'drop_wd/js/requests_summary.js' %}"></script>
+<script>
+  jQuery(function ($) {
+    initDropWdRequestsSummary({
+      summaryUrl:        '{% url "ce_drop_wd:requests_summary" %}',
+      formSelector:      '#summary_filter',
+      containerSelector: '#summary_breakdowns',
+      headlineSelector:  '#summary_headline',
+      trendSelector:     '#summary_trend',
+      tabSelector:       '#summary',
+    });
+  });
+</script>

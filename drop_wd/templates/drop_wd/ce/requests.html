@@ -22,6 +22,9 @@
                     <li class="nav-item">
                         <a class="nav-link active" data-toggle="tab" href="#all">All {{page_title}}</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-toggle="tab" href="#summary">Summary</a>
+                    </li>
                 </ul>
 
                 <div class="tab-content">
@@ -30,6 +33,10 @@
                         {% include 'drop_wd/ce/requests_table.html' %}
                     </div>
                     <!-- end tab # records_active -->
+
+                    <div class="tab-pane" id="summary">
+                        {% include 'drop_wd/ce/_summary_tab.html' %}
+                    </div>
 
                 </div>
                 <!-- end tab-content -->

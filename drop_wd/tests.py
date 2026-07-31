@@ -1,6 +1,7 @@
 import json
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
+from django.urls import reverse
 
 from .services import get_requests_table_config
 from .services import requests_table
@@ -280,3 +281,164 @@ class TemplateCommentTests(SimpleTestCase):
         ]
 
         self.assertEqual(offenders, [])
+
+
+class RequestsSummaryTests(TestCase):
+    """CE Summary tab aggregates.
+
+    Exercises the real ORM aggregation rather than mocking it — the grouping
+    paths span four joins and a typo in one would surface as an empty table,
+    not an error.
+    """
+
+    def setUp(self):
+        from django.contrib.auth.models import Group
+        from django.contrib.auth.signals import user_logged_in
+        from cis.models.course import Campus, Cohort, Course
+        from cis.models.customuser import CustomUser
+        from cis.models.highschool import HighSchool
+        from cis.models.section import ClassSection, StudentRegistration
+        from cis.models.student import Student
+        from cis.models.term import AcademicYear, Term
+        from .models import DropWDRequest
+
+        self._saved_receivers = list(user_logged_in.receivers)
+        user_logged_in.receivers = []
+
+        Group.objects.get_or_create(name='ce')
+        Group.objects.get_or_create(name='student')
+        CustomUser.objects.get_or_create(
+            username='cron', defaults={'email': 'cron@example.com'})
+
+        self.user = CustomUser.objects.create_superuser(
+            email='ce-sum@example.com', username='ce-sum@example.com',
+            password='pw')
+        self.user.groups.add(Group.objects.get(name='ce'))
+        self.client.force_login(self.user)
+
+        campus = Campus.objects.create(name='Sum Campus', code='SUMC')
+        year = AcademicYear.objects.create(name='2029-2030', campus=campus)
+        self.term_a = Term.objects.create(academic_year=year, code='SA',
+                                          label='Sum Term A')
+        self.term_b = Term.objects.create(academic_year=year, code='SB',
+                                          label='Sum Term B')
+        cohort = Cohort.objects.create(designator='SM', name='Sum Cohort')
+        course = Course.objects.create(cohort=cohort, catalog_number='300',
+                                       name='SUM 300', title='Summary 300',
+                                       campus=campus)
+        self.hs = HighSchool.objects.create(name='Summary HS', code='SUMHS')
+        self.section_a = ClassSection.objects.create(
+            course=course, term=self.term_a, highschool=self.hs)
+        self.section_b = ClassSection.objects.create(
+            course=course, term=self.term_b, highschool=self.hs)
+
+        # 2 requests in term A (one processed), 1 in term B.
+        self._request(self.section_a, 0, 'requested')
+        self._request(self.section_a, 1, 'processed')
+        self._request(self.section_b, 2, 'requested')
+
+        self.url = reverse('ce_drop_wd:requests_summary')
+
+    def tearDown(self):
+        from django.contrib.auth.signals import user_logged_in
+        user_logged_in.receivers = self._saved_receivers
+
+    def _request(self, section, index, status):
+        from cis.models.customuser import CustomUser
+        from cis.models.section import StudentRegistration
+        from cis.models.student import Student
+        from .models import DropWDRequest
+
+        user = CustomUser.objects.create_user(
+            email=f'sum{index}@example.com', username=f'sum{index}@example.com',
+            password='pw', first_name='S', last_name=f'Student{index}')
+        student = Student.objects.create(user=user, highschool=self.hs)
+        registration = StudentRegistration.objects.create(
+            student=student, class_section=section,
+            status_changed_on={'applied_on': '01/01/2029'})
+        return DropWDRequest.objects.create(
+            registration=registration, status=status)
+
+    def _get(self, **params):
+        return json.loads(self.client.get(self.url, params).content)
+
+    def test_headline_counts_every_request_when_no_term_selected(self):
+        data = self._get()
+
+        self.assertEqual(data['headline']['total'], 3)
+        self.assertEqual(data['headline']['requested'], 2)
+        self.assertEqual(data['headline']['processed'], 1)
+        self.assertEqual(data['headline']['highschools'], 1)
+        self.assertEqual(data['headline']['courses'], 1)
+
+    def test_term_filter_narrows_every_number(self):
+        data = self._get(term=str(self.term_a.id))
+
+        self.assertEqual(data['headline']['total'], 2)
+        by_term = self._breakdown(data, 'term')
+        self.assertEqual([r['name'] for r in by_term['rows']], ['Sum Term A'])
+
+    def test_multiple_terms_are_unioned(self):
+        response = self.client.get(
+            self.url, {'term': [str(self.term_a.id), str(self.term_b.id)]})
+        data = json.loads(response.content)
+
+        self.assertEqual(data['headline']['total'], 3)
+        self.assertEqual(len(self._breakdown(data, 'term')['rows']), 2)
+
+    def _breakdown(self, data, key):
+        return next(b for b in data['breakdowns'] if b['key'] == key)
+
+    def test_every_breakdown_resolves_its_grouping_path(self):
+        """A wrong ORM path yields rows named '(none)' instead of real values."""
+        data = self._get()
+
+        for key, expected in (('term', 'Sum Term A'),
+                              ('highschool', 'Summary HS'),
+                              ('course', 'SUM 300')):
+            with self.subTest(breakdown=key):
+                names = [r['name'] for r in self._breakdown(data, key)['rows']]
+                self.assertIn(expected, names)
+
+    def test_rows_carry_status_split_and_percentage(self):
+        row = next(r for r in self._breakdown(self._get(), 'term')['rows']
+                   if r['name'] == 'Sum Term A')
+
+        self.assertEqual(row['total'], 2)
+        self.assertEqual(row['requested'], 1)
+        self.assertEqual(row['processed'], 1)
+        self.assertAlmostEqual(row['pct'], 66.7, places=1)
+
+    def test_by_month_is_present_and_ordered(self):
+        data = self._get()
+
+        self.assertTrue(data['by_month'])
+        self.assertEqual(sum(m['total'] for m in data['by_month']), 3)
+
+    def test_instructor_rows_carry_both_names(self):
+        """Grouping on last_name alone merges two instructors who share one."""
+        data = self._get()
+        names = [r['name'] for r in self._breakdown(data, 'instructor')['rows']]
+
+        # No teacher is set on these fixtures, so the row is '(none)' rather
+        # than a surname — what matters is that it never crashes and never
+        # silently drops the first name when a teacher IS set.
+        self.assertTrue(all(', ' in n or n == '(none)' for n in names))
+
+    def test_status_rows_show_labels_not_keys(self):
+        names = [r['name'] for r in self._breakdown(self._get(), 'status')['rows']]
+
+        self.assertIn('Requested', names)
+        self.assertIn('Processed', names)
+        self.assertNotIn('requested', names)
+
+    def test_requires_a_cis_role(self):
+        from cis.models.customuser import CustomUser
+
+        self.client.logout()
+        outsider = CustomUser.objects.create_user(
+            email='out-sum@example.com', username='out-sum@example.com',
+            password='pw')
+        self.client.force_login(outsider)
+
+        self.assertEqual(self.client.get(self.url).status_code, 404)

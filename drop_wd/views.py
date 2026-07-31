@@ -1,6 +1,7 @@
 import logging
 
 from django.contrib import messages
+from django.db.models import Count
 from django.http import JsonResponse, Http404
 from django.shortcuts import render, get_object_or_404
 from django.views.decorators.clickjacking import xframe_options_exempt
@@ -567,3 +568,117 @@ def requests(request):
             'requests_table': requests_table_config,
         }
     )
+
+
+# --- Summary tab -------------------------------------------------------------
+
+SUMMARY_BREAKDOWNS = (
+    # key, card title, ORM path(s) to group by, column label
+    # A tuple of paths groups by all of them and joins the values for display —
+    # instructors need first and last name or two people share a row.
+    ('term',       'Requests by Term',        ('registration__class_section__term__label',),  'Term'),
+    ('highschool', 'Requests by High School', ('registration__student__highschool__name',),   'High School'),
+    ('course',     'Requests by Course',      ('registration__class_section__course__name',), 'Course'),
+    ('instructor', 'Requests by Instructor',
+     ('registration__class_section__teacher__user__last_name',
+      'registration__class_section__teacher__user__first_name'), 'Instructor'),
+    ('status',     'Requests by Status',      ('status',),                                    'Status'),
+)
+
+# status stores keys; the tab should show what the rest of the UI shows.
+STATUS_LABELS = dict(DropWDRequest.STATUS_OPTIONS)
+
+
+def _summary_rows(records, group_paths, total, key=None):
+    """Aggregate `records` by one or more ORM paths.
+
+    Returns rows of {name, total, requested, processed, pct}. Counting in the
+    database rather than in Python keeps this usable when a term has thousands
+    of requests.
+    """
+    from django.db.models import Count, Q
+
+    rows = (
+        records
+        .values(*group_paths)
+        .annotate(
+            total=Count('id'),
+            requested=Count('id', filter=Q(status='requested')),
+            processed=Count('id', filter=Q(status='processed')),
+        )
+        .order_by('-total')
+    )
+
+    out = []
+    for row in rows:
+        parts = [row.get(path) for path in group_paths]
+        parts = [str(p) for p in parts if p not in (None, '')]
+        name = ', '.join(parts) if parts else '(none)'
+        if key == 'status':
+            name = STATUS_LABELS.get(name, name)
+        out.append({
+            'name': name,
+            'total': row['total'],
+            'requested': row['requested'],
+            'processed': row['processed'],
+            'pct': round(row['total'] * 100.0 / total, 1) if total else 0.0,
+        })
+    return out
+
+
+@xframe_options_exempt
+def requests_summary(request):
+    """JSON aggregates for the CE Summary tab.
+
+    Client-side tables rather than a server-side DataTables feed: the result
+    sets are small (one row per term / school / course), and it means CSV and
+    PDF exports carry every row instead of only the page on screen.
+    """
+    if not user_has_cis_role(request.user):
+        raise Http404
+
+    from django.db.models.functions import TruncMonth
+
+    term_ids = [t for t in request.GET.getlist('term') if t]
+
+    records = DropWDRequest.objects.all()
+    if term_ids:
+        records = records.filter(
+            registration__class_section__term__id__in=term_ids)
+
+    total = records.count()
+
+    by_month = (
+        records
+        .annotate(month=TruncMonth('created_on'))
+        .values('month')
+        .order_by('month')
+        .annotate(total=Count('id'))
+    ) if total else []
+
+    payload = {
+        'headline': {
+            'total': total,
+            'requested': records.filter(status='requested').count(),
+            'processed': records.filter(status='processed').count(),
+            'highschools': records.values(
+                'registration__student__highschool').distinct().count(),
+            'courses': records.values(
+                'registration__class_section__course').distinct().count(),
+        },
+        'breakdowns': [
+            {
+                'key': key,
+                'title': title,
+                'name_label': name_label,
+                'rows': _summary_rows(records, paths, total, key=key),
+            }
+            for key, title, paths, name_label in SUMMARY_BREAKDOWNS
+        ],
+        'by_month': [
+            {'month': row['month'].strftime('%b %Y') if row['month'] else '',
+             'total': row['total']}
+            for row in by_month
+        ],
+    }
+    return JsonResponse(payload)
