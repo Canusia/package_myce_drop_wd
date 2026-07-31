@@ -96,6 +96,7 @@ class drop_wd_requests(forms.Form):
             'registration.class_section.teacher': 'Teacher',
             'registration.class_section.teacher.user.email': 'Teacher Email',
             'registration.class_section.highschool.name': 'High School',
+            'registration.class_section.highschool.hs_type_display': 'School Type',
             'registration.status': 'Registration Status',
 
             'processed_by': 'Processed By',
