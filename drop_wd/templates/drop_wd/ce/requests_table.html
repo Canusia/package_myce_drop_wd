@@ -1,4 +1,9 @@
 {% load drop_wd_tables %}
-{# Shim. Seven cis detail-page tabs include this path with type/record; the tag
-   builds the table config, which a template cannot do on its own. #}
+{% comment %}
+Shim. Seven cis detail-page tabs include this path with type/record; the tag
+builds the table config, which a template cannot do on its own.
+
+Block comment, not a hash comment: a hash comment cannot span lines — Django
+leaves a multi-line one unparsed and renders it as visible text on the page.
+{% endcomment %}
 {% drop_wd_requests_table type=type record=record %}

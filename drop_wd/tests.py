@@ -240,3 +240,43 @@ class CERequestsTableTagTests(SimpleTestCase):
         html = self._render()
         self.assertIn('id="all_req_filter"', html)
         self.assertIn('Filter By Term', html)
+
+
+class TemplateCommentTests(SimpleTestCase):
+    """Django's {# #} comment cannot span lines: a multi-line one is left
+    unparsed and rendered as visible text. The shim shipped with exactly that
+    bug in v2026.1.0, printing its own comment onto the CE index page and all
+    seven detail tabs. Nothing else asserted on rendered output, so nothing
+    caught it."""
+
+    def _render(self, template_name, **ctx):
+        from django.template.loader import render_to_string
+        return render_to_string(template_name, ctx)
+
+    def test_shim_leaks_no_comment_markup(self):
+        html = self._render('drop_wd/ce/requests_table.html')
+
+        for marker in ('{#', '#}', '{% comment', '{% endcomment'):
+            self.assertNotIn(marker, html)
+
+    def test_shim_still_renders_the_table(self):
+        html = self._render('drop_wd/ce/requests_table.html')
+
+        self.assertIn('records_drop_wd_requests', html)
+        self.assertIn('requests_table.js', html)
+
+    def test_no_package_template_has_a_multiline_hash_comment(self):
+        """Guards every template in the package, not just the shim."""
+        import pathlib
+        import re
+
+        root = pathlib.Path(__file__).resolve().parent / 'templates'
+        offenders = [
+            f'{path}:{source[:match.start()].count(chr(10)) + 1}'
+            for path in root.rglob('*.html')
+            for source in [path.read_text(errors='ignore')]
+            for match in re.finditer(r'\{#.*?#\}', source, re.S)
+            if '\n' in match.group(0)
+        ]
+
+        self.assertEqual(offenders, [])
