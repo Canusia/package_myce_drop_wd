@@ -59,9 +59,20 @@ class drop_wd_requests(forms.Form):
             )
         
         self.fields['terms'].queryset = Term.objects.all().order_by('label')
-        self.fields['highschools'].queryset = HighSchool.objects.filter(
+
+        highschools = HighSchool.objects.filter(
             status__iexact='Active'
         ).order_by('name')
+
+        if request:
+            self.roles = request.user.get_roles()
+
+            if 'ce' not in self.roles and 'highschool_admin' in self.roles:
+                highschools = highschools.filter(
+                    id__in=request.user.get_highschools_for_admin()
+                )
+
+        self.fields['highschools'].queryset = highschools
 
     def run(self, task, data):
         term_ids = data.get('terms', None)
@@ -71,9 +82,28 @@ class drop_wd_requests(forms.Form):
             registration__class_section__term__id__in=term_ids
         )
         
+        # The form is not re-instantiated here (no request), so the queryset
+        # gate in __init__ cannot be relied on — re-apply it against the user
+        # who requested the report.
+        requested_by = task.created_by
+        if not user_has_cis_role(requested_by) and \
+                user_has_highschool_admin_role(requested_by):
+            allowed_ids = [
+                str(id) for id in requested_by.get_highschools_for_admin()
+            ]
+            highschool_ids = [
+                id for id in (highschool_ids or [])
+                if str(id) in allowed_ids
+            ] or allowed_ids
+
+            if not highschool_ids:
+                # HS admin with no assigned schools sees nothing, rather than
+                # falling through the `if highschool_ids` guard unfiltered.
+                records = records.none()
+
         if highschool_ids:
             records = records.filter(
-                registration__class_section__highschool__id__in=highschool_ids
+                registration__student__highschool__id__in=highschool_ids
             )
 
         if data.get('status'):
@@ -95,8 +125,9 @@ class drop_wd_requests(forms.Form):
             'registration.class_section.term': 'Term',
             'registration.class_section.teacher': 'Teacher',
             'registration.class_section.teacher.user.email': 'Teacher Email',
-            'registration.class_section.highschool.name': 'High School',
-            'registration.class_section.highschool.hs_type_display': 'School Type',
+            'registration.student.highschool.name': 'High School',
+            'registration.student.highschool.hs_type_display': 'School Type',
+            'registration.class_section.highschool.name': 'Class Section High School',
             'registration.status': 'Registration Status',
 
             'processed_by': 'Processed By',
