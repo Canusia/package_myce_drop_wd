@@ -1,6 +1,7 @@
 include LICENSE
 include README.rst
 include CLAUDE.md
+include CHANGELOG.md
 recursive-include drop_wd/admin *
 recursive-include drop_wd/models *
 recursive-include drop_wd/urls *
