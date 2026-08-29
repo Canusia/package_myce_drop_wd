@@ -17,7 +17,12 @@
             let url = '/instructor/drop_wd/api/class_section/registrations/?term=' + $(term).val() + '&class_section=' + $(section).val()
 
             $.getJSON(url, function (data) {
-                if(data.results.length == 0) {
+                // The endpoint is unpaginated (pagination_class = None) and
+                // returns a bare list; tolerate a paged {results: []} too so a
+                // future pagination change cannot blank the dropdown.
+                let rows = data.results || data
+
+                if(rows.length == 0) {
                     class_registrations.append(
                         $('<option></option>').attr(
                             'value', ''
@@ -34,7 +39,7 @@
                         )
                     )
 
-                    $.each(data.results, function (key, entry) {
+                    $.each(rows, function (key, entry) {
                         class_registrations.append(
                             $('<option></option>').attr(
                                 'value', entry.id
@@ -64,7 +69,12 @@
             let url = '/instructor/drop_wd/api/class_sections/?term=' + $(term).val()
 
             $.getJSON(url, function (data) {
-                if(data.results.length == 0) {
+                // The endpoint is unpaginated (pagination_class = None) and
+                // returns a bare list; tolerate a paged {results: []} too so a
+                // future pagination change cannot blank the dropdown.
+                let rows = data.results || data
+
+                if(rows.length == 0) {
                     sections.append(
                         $('<option></option>').attr(
                             'value', ''
@@ -81,7 +91,7 @@
                         )
                     )
 
-                    $.each(data.results, function (key, entry) {
+                    $.each(rows, function (key, entry) {
                         sections.append(
                             $('<option></option>').attr(
                                 'value', entry.id

@@ -8,9 +8,6 @@ from django.views.decorators.clickjacking import xframe_options_exempt
 
 from rest_framework import viewsets
 
-from cis.serializers.class_section import ClassSectionSerializer
-from cis.serializers.registration import StudentRegistrationSerializer
-
 from cis.models.term import Term
 
 from cis.utils import (
@@ -37,15 +34,29 @@ from cis.forms.section import EditStudentRegistration
 
 from .models import DropWDRequest
 from .forms import DropWDRequestForm, DropWDSignatureForm, EditDropWDRequestForm, StudentDropWDRequestForm, RequestReviewForm
-from .serializers import DropWDRequestSerializer
+from .serializers import (
+    DropWDRequestSerializer,
+    DropdownClassSectionSerializer,
+    DropdownRegistrationSerializer
+)
 from .settings.drop_wd_email import drop_wd_email as drop_wd_settings
 
 
 logger = logging.getLogger(__name__)
 
 class ClassRegistrationViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = StudentRegistrationSerializer
+    serializer_class = DropdownRegistrationSerializer
     permission_classes = [INSTRUCTOR_user_only|CIS_user_only|HSADMIN_user_only|STUDENT_user_only]
+
+    # Feeds the student <select> on the New Request page via plain $.getJSON,
+    # which reads page 1 and never follows `next`. The project-wide
+    # DatatablesPageNumberPagination falls back to PAGE_SIZE = 50 for
+    # non-datatables requests and offers no page_size query param, so a
+    # section's 51st student was silently unreachable. There is no paging UI
+    # here to serve and no other consumer, so return the lot -- which is only
+    # affordable because DropdownRegistrationSerializer is lean; see
+    # serializers.py before widening it back to cis's nested serializer.
+    pagination_class = None
 
     def get_queryset(self):
         class_section = self.request.GET.get('class_section', '').strip()
@@ -59,7 +70,7 @@ class ClassRegistrationViewSet(viewsets.ReadOnlyModelViewSet):
             records = StudentRegistration.objects.filter(
                 class_section__term__id=term,
                 class_section__id=class_section
-            )
+            ).select_related('student__user')
 
             if allowed_statuses:
                 records = records.filter(status__in=allowed_statuses)
@@ -91,9 +102,12 @@ class ClassRegistrationViewSet(viewsets.ReadOnlyModelViewSet):
         return records
 
 class ClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = ClassSectionSerializer
+    serializer_class = DropdownClassSectionSerializer
     permission_classes = [INSTRUCTOR_user_only|CIS_user_only|HSADMIN_user_only|STUDENT_user_only]
 
+    # Same dropdown feeder, same cap: an instructor or HS admin with more than
+    # 50 sections in a term could not select the 51st. See above.
+    pagination_class = None
 
     def get_queryset(self):
         term = self.request.GET.get('term', '').strip()
@@ -104,7 +118,7 @@ class ClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
 
             records = ClassSection.objects.filter(
                 term__id=term
-            )
+            ).select_related('course')
 
             if allowed_section_statuses:
                 records = records.filter(status__in=allowed_section_statuses)

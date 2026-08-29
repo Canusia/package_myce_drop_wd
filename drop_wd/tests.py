@@ -442,3 +442,251 @@ class RequestsSummaryTests(TestCase):
         self.client.force_login(outsider)
 
         self.assertEqual(self.client.get(self.url).status_code, 404)
+
+
+class DropdownPaginationTests(TestCase):
+    """The two dropdown-feeder endpoints behind the "New Request" page.
+
+    Both are plain-JSON `$.getJSON` consumers, but they inherited the project's
+    DataTables pagination (`PAGE_SIZE = 50`). `DatatablesPageNumberPagination`
+    only speaks the `start`/`length` protocol when the renderer format is
+    `datatables`; for a plain JSON request it falls back to stock
+    `PageNumberPagination`, which caps at 50 and exposes no `page_size` query
+    param for the client to raise. The templates then read `data.results` and
+    never follow `data.next`, so the 51st student in a section — and the 51st
+    section in a term — were silently unreachable.
+
+    These tests seed 60 of each and assert every one comes back, through the
+    same accessor the templates use.
+    """
+
+    SECTION_COUNT = 60
+    REGISTRATION_COUNT = 60
+
+    def setUp(self):
+        from django.contrib.auth.models import Group
+        from django.contrib.auth.signals import user_logged_in
+        from cis.models.course import Campus, Cohort, Course
+        from cis.models.customuser import CustomUser
+        from cis.models.highschool import HighSchool
+        from cis.models.section import ClassSection
+        from cis.models.teacher import Teacher
+        from cis.models.term import AcademicYear, Term
+
+        self._saved_receivers = list(user_logged_in.receivers)
+        user_logged_in.receivers = []
+
+        Group.objects.get_or_create(name='instructor')
+        Group.objects.get_or_create(name='student')
+        CustomUser.objects.get_or_create(
+            username='cron', defaults={'email': 'cron@example.com'})
+
+        user = CustomUser.objects.create_user(
+            email='pag-teach@example.com', username='pag-teach@example.com',
+            password='pw', first_name='Paige', last_name='Nation')
+        user.groups.add(Group.objects.get(name='instructor'))
+        self.teacher = Teacher.objects.create(user=user)
+        self.client.force_login(user)
+
+        campus = Campus.objects.create(name='Pag Campus', code='PAGC')
+        year = AcademicYear.objects.create(name='2031-2032', campus=campus)
+        self.term = Term.objects.create(
+            academic_year=year, code='PG', label='Pag Term')
+        cohort = Cohort.objects.create(designator='PG', name='Pag Cohort')
+        self.course = Course.objects.create(
+            cohort=cohort, catalog_number='400', name='PAG 400',
+            title='Pagination 400', campus=campus)
+        self.hs = HighSchool.objects.create(name='Pag HS', code='PAGHS')
+
+        self.section = ClassSection.objects.create(
+            course=self.course, term=self.term, highschool=self.hs,
+            teacher=self.teacher)
+
+    def tearDown(self):
+        from django.contrib.auth.signals import user_logged_in
+        user_logged_in.receivers = self._saved_receivers
+
+    # -- helpers ---------------------------------------------------------
+
+    def _rows(self, url, **params):
+        """Read the payload exactly as the start_request.html templates do."""
+        response = self.client.get(url, params)
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        return data['results'] if isinstance(data, dict) else data
+
+    def _make_registrations(self, count, status='enrolled', offset=0):
+        from cis.models.customuser import CustomUser
+        from cis.models.section import StudentRegistration
+        from cis.models.student import Student
+
+        for index in range(offset, offset + count):
+            user = CustomUser.objects.create_user(
+                email=f'pag{index}@example.com',
+                username=f'pag{index}@example.com',
+                password='pw', first_name='P', last_name=f'Student{index:03d}')
+            student = Student.objects.create(user=user, highschool=self.hs)
+            StudentRegistration.objects.create(
+                student=student, class_section=self.section, status=status,
+                status_changed_on={'applied_on': '01/01/2031'})
+
+    def _set_allowed_statuses(self, statuses):
+        from cis.models.settings import Setting
+        from .settings.drop_wd_email import drop_wd_email
+
+        setting, _ = Setting.objects.get_or_create(
+            key=drop_wd_email.key, defaults={'value': {}})
+        value = setting.value or {}
+        value['allowed_registration_statuses'] = statuses
+        setting.value = value
+        setting.save()
+
+    def _registrations_url(self):
+        return reverse(
+            'instructor_drop_wd:'
+            'instructor_drop_wd_class_section_registrations-list')
+
+    def _sections_url(self):
+        return reverse(
+            'instructor_drop_wd:instructor_drop_wd_class_sections-list')
+
+    # -- registrations ---------------------------------------------------
+
+    def test_every_registration_in_the_section_is_returned(self):
+        """The reported bug: a section with more than 50 students showed 50."""
+        self._make_registrations(self.REGISTRATION_COUNT)
+
+        rows = self._rows(
+            self._registrations_url(),
+            term=str(self.term.id), class_section=str(self.section.id))
+
+        self.assertEqual(len(rows), self.REGISTRATION_COUNT)
+
+    def test_allowed_status_filter_still_applies_past_the_old_page_size(self):
+        """Removing the cap must not remove the status filter with it."""
+        self._set_allowed_statuses(['enrolled'])
+        self._make_registrations(self.REGISTRATION_COUNT, status='enrolled')
+        self._make_registrations(5, status='dropped', offset=500)
+
+        rows = self._rows(
+            self._registrations_url(),
+            term=str(self.term.id), class_section=str(self.section.id))
+
+        self.assertEqual(len(rows), self.REGISTRATION_COUNT)
+
+    def test_registrations_stay_scoped_to_the_requesting_instructor(self):
+        """Unbounded must not mean unscoped."""
+        from cis.models.customuser import CustomUser
+        from cis.models.section import ClassSection
+        from cis.models.teacher import Teacher
+
+        self._make_registrations(self.REGISTRATION_COUNT)
+
+        other_user = CustomUser.objects.create_user(
+            email='pag-other@example.com', username='pag-other@example.com',
+            password='pw', first_name='O', last_name='Ther')
+        other_section = ClassSection.objects.create(
+            course=self.course, term=self.term, highschool=self.hs,
+            teacher=Teacher.objects.create(user=other_user))
+
+        rows = self._rows(
+            self._registrations_url(),
+            term=str(self.term.id), class_section=str(other_section.id))
+
+        self.assertEqual(rows, [])
+
+    def test_registrations_keep_their_name_ordering(self):
+        self._make_registrations(self.REGISTRATION_COUNT)
+
+        rows = self._rows(
+            self._registrations_url(),
+            term=str(self.term.id), class_section=str(self.section.id))
+        names = [r['student']['user']['last_name'] for r in rows]
+
+        self.assertEqual(names, sorted(names))
+
+    # -- class sections --------------------------------------------------
+
+    def test_every_class_section_in_the_term_is_returned(self):
+        """Same defect on the section dropdown feeding the same page."""
+        from cis.models.section import ClassSection
+
+        for index in range(self.SECTION_COUNT - 1):   # one exists from setUp
+            ClassSection.objects.create(
+                course=self.course, term=self.term, highschool=self.hs,
+                teacher=self.teacher, class_number=f'{40000 + index}')
+
+        rows = self._rows(self._sections_url(), term=str(self.term.id))
+
+        self.assertEqual(len(rows), self.SECTION_COUNT)
+
+    # -- cost of being unbounded -----------------------------------------
+
+    def test_registrations_do_not_scale_queries_with_row_count(self):
+        """Unbounded only stays safe while the serializer stays lean.
+
+        With cis's nested StudentRegistrationSerializer this endpoint issued
+        1,571 queries and 390 KB for 60 rows (~26 queries per row) — removing
+        the page cap on top of that would have made a 300-student section cost
+        ~7,800 queries. The lean serializer brings it to a constant handful.
+        The ceiling is deliberately loose; it is here to catch a regression
+        back to per-row joins, not to pin an exact number.
+        """
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self._make_registrations(self.REGISTRATION_COUNT)
+        url = self._registrations_url()
+        params = {'term': str(self.term.id),
+                  'class_section': str(self.section.id)}
+
+        with CaptureQueriesContext(connection) as ctx:
+            response = self.client.get(url, params)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertLess(
+            len(ctx.captured_queries), 25,
+            f'{len(ctx.captured_queries)} queries for '
+            f'{self.REGISTRATION_COUNT} rows — the dropdown serializer has '
+            f'regressed to per-row joins')
+
+    def test_sections_do_not_scale_queries_with_row_count(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        from cis.models.section import ClassSection
+
+        for index in range(self.SECTION_COUNT - 1):
+            ClassSection.objects.create(
+                course=self.course, term=self.term, highschool=self.hs,
+                teacher=self.teacher, class_number=f'{40000 + index}')
+
+        with CaptureQueriesContext(connection) as ctx:
+            response = self.client.get(
+                self._sections_url(), {'term': str(self.term.id)})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertLess(len(ctx.captured_queries), 25)
+
+    def test_dropdown_payload_carries_only_what_the_template_reads(self):
+        """Pins the response shape the six start_request.html call sites use."""
+        self._make_registrations(1)
+
+        row = self._rows(
+            self._registrations_url(),
+            term=str(self.term.id), class_section=str(self.section.id))[0]
+
+        self.assertEqual(
+            set(row), {'id', 'status', 'status_pretty', 'student'})
+        self.assertEqual(set(row['student']), {'user'})
+        self.assertEqual(
+            set(row['student']['user']), {'first_name', 'last_name'})
+        # instructor / HS-admin templates read status_pretty, student reads status
+        self.assertEqual(row['status'], 'enrolled')
+        self.assertEqual(row['status_pretty'], 'Enrolled')
+
+    def test_section_payload_carries_only_what_the_template_reads(self):
+        row = self._rows(self._sections_url(), term=str(self.term.id))[0]
+
+        self.assertEqual(set(row), {'id', 'class_number', 'course'})
+        self.assertEqual(set(row['course']), {'name'})
+        self.assertEqual(row['course']['name'], 'PAG 400')
