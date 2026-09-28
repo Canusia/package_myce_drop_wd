@@ -13,6 +13,28 @@ from crispy_forms.layout import Submit
 from cis.models.term import Term, AcademicYear
 from cis.models.settings import Setting
 
+
+def _install_defaults(key, defaults):
+    """Create the setting, or add only the keys it lacks (package-cis #19/#51).
+
+    Setting.install_defaults when the installed cis ships it (v0.0.39+);
+    otherwise the same merge inline, because this package also runs on
+    tenants pinned to an older cis. Never overwrites a customised value.
+    """
+    helper = getattr(Setting, 'install_defaults', None)
+    if helper is not None:
+        return helper(key, defaults)
+    setting, created = Setting.objects.get_or_create(
+        key=key, defaults={'value': dict(defaults)})
+    if not created:
+        stored = setting.value if isinstance(setting.value, dict) else {}
+        missing = {k: v for k, v in defaults.items() if k not in stored}
+        if missing:
+            stored.update(missing)
+            setting.value = stored
+            setting.save()
+    return setting
+
 from cis.validators import validate_email_list, validate_html_short_code, validate_json
 
 class SettingForm(forms.Form):
@@ -293,14 +315,7 @@ class drop_wd_email(SettingForm):
     def install(self):
         defaults = {'is_active': 'Yes', 'email_to_cep': 'Change this in Settings -> Misc -> Subject', 'processed_email': 'Change this in Settings -> Misc -> Subject', 'email_address_to_cep': 'kadaji@gmail.com', 'email_subject_to_cep': 'Change this in Settings -> Misc -> Subject', 'processed_email_subject': 'Change this in Settings -> Misc -> Subject'}
 
-        try:
-            setting = Setting.objects.get(key=self.key)
-        except Setting.DoesNotExist:
-            setting = Setting()
-            setting.key = self.key
-
-        setting.value = defaults
-        setting.save()
+        _install_defaults(self.key, defaults)
 
     @classmethod
     def from_db(cls):
