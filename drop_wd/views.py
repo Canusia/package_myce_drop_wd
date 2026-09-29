@@ -1,10 +1,11 @@
 import logging
 
 from django.contrib import messages
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.http import JsonResponse, Http404
 from django.shortcuts import render, get_object_or_404
 from django.views.decorators.clickjacking import xframe_options_exempt
+from django.views.decorators.http import require_POST
 
 from rest_framework import viewsets
 
@@ -43,6 +44,38 @@ from .settings.drop_wd_email import drop_wd_email as drop_wd_settings
 
 
 logger = logging.getLogger(__name__)
+
+
+def registrations_for(user):
+    """StudentRegistrations a user may see, sign or file a request for.
+
+    CE staff: all. Instructors: sections they teach. HS admins: students at
+    their schools. Students: their own. A user with several roles gets the
+    union; anyone else gets none. Every view and feed that takes a request or
+    registration id must filter through this, or the id alone is the key.
+    """
+    records = StudentRegistration.objects.all()
+    if user_has_cis_role(user):
+        return records
+
+    scope = Q(pk__in=[])
+    if user_has_instructor_role(user):
+        scope |= Q(class_section__teacher__user=user)
+    if user_has_highschool_admin_role(user):
+        hsadmin = HSAdministrator.objects.filter(user__id=user.id).first()
+        if hsadmin is not None:
+            scope |= Q(student__highschool__in=hsadmin.get_highschools())
+    if user_has_student_role(user):
+        scope |= Q(student__user=user)
+    return records.filter(scope)
+
+
+def requests_for(user):
+    """DropWDRequests on registrations the user may see."""
+    if user_has_cis_role(user):
+        return DropWDRequest.objects.all()
+    return DropWDRequest.objects.filter(registration__in=registrations_for(user))
+
 
 class ClassRegistrationViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = DropdownRegistrationSerializer
@@ -164,28 +197,7 @@ class DropWDRequestViewSet(viewsets.ReadOnlyModelViewSet):
         teacher_id = self.request.GET.get('teacher_id', '').strip()
         course_id = self.request.GET.get('course_id', '').strip()
 
-        if user_has_instructor_role(user):
-            records = DropWDRequest.objects.filter(
-                registration__class_section__teacher__user=user
-            )
-        elif user_has_student_role(user):
-            records = DropWDRequest.objects.filter(
-                registration__student__user=user
-            )
-        
-        if user_has_highschool_admin_role(user):
-            try:
-                hsadmin = HSAdministrator.objects.get(user__id=user.id)
-                highschools = hsadmin.get_highschools()
-
-                records = DropWDRequest.objects.filter(
-                    registration__student__highschool__id__in=highschools.values_list('id', flat=True)
-                )
-            except:
-                ...
-        
-        if user_has_cis_role(user):
-            records = DropWDRequest.objects.all()
+        records = requests_for(user)
 
         try:
             if student_id:
@@ -256,6 +268,16 @@ def submit_request(request):
         else:
             form = DropWDRequestForm(data=request.POST)
 
+        if form.is_valid() and not registrations_for(request.user).filter(
+                pk=form.cleaned_data['registration'].pk).exists():
+            # The form's registration queryset is built from the posted id,
+            # so it accepts any registration; only file for one in scope.
+            return JsonResponse({
+                'title': 'Not allowed',
+                'message': 'You are not allowed to submit a request for this registration.',
+                'status': 'error'
+            }, status=403)
+
         if form.is_valid():
             try:
                 drop_req = form.save(request)
@@ -290,14 +312,18 @@ def submit_request(request):
         }
     )
 
+@require_POST
 def do_bulk_action(request):
 
-    action = request.GET.get('action')
-    ids = request.GET.getlist('ids[]')
-    
+    action = request.POST.get('action')
+    ids = request.POST.getlist('ids[]')
+
     if action == 'mark_as_approved':
+        # Only the caller's own requests; an id outside scope is skipped.
+        scoped = requests_for(request.user)
+
         if user_has_instructor_role(request.user):
-            reqs = DropWDRequest.objects.filter(
+            reqs = scoped.filter(
                 id__in=ids,
             )
 
@@ -310,7 +336,7 @@ def do_bulk_action(request):
             })
         
         elif user_has_highschool_admin_role(request.user):
-            reqs = DropWDRequest.objects.filter(
+            reqs = scoped.filter(
                 id__in=ids,
             )
 
@@ -323,7 +349,7 @@ def do_bulk_action(request):
             })
         
         elif user_has_student_role(request.user):
-            reqs = DropWDRequest.objects.filter(
+            reqs = scoped.filter(
                 id__in=ids,
             )
 
@@ -335,38 +361,36 @@ def do_bulk_action(request):
                 'status': 'success'
             })
 
+    return JsonResponse({
+        'message': 'Unknown action.',
+        'status': 'error'
+    }, status=400)
+
 @xframe_options_exempt
 def drop_request(request, record_id):
 
-    record = get_object_or_404(DropWDRequest, pk=record_id)
+    # 404 rather than 403 for a request outside the caller's scope, so ids
+    # can't be probed.
+    record = get_object_or_404(requests_for(request.user), pk=record_id)
     needs_to_approve = False
 
     if user_has_cis_role(request.user):
         template = 'drop_wd/ce/request.html'
-        
+
     elif user_has_instructor_role(request.user):
         template = 'drop_wd/instructor/request.html'
-        if record.registration.class_section.teacher.user != request.user:
-            raise Http404
-
         needs_to_approve = record.record_needs_instructor_approval()
 
     elif user_has_highschool_admin_role(request.user):
         template = 'drop_wd/highschool_admin/request.html'
-        user = HSAdministrator.objects.get(user__id=request.user.id)
-        highschools = user.get_highschools()
-
-        if record.registration.student.highschool.id in highschools:
-            raise Http404
-
         needs_to_approve = record.record_needs_student_approval()
 
     elif user_has_student_role(request.user):
         template = 'drop_wd/student/request.html'
-        if record.registration.student.user != request.user:
-            raise Http404
-
         needs_to_approve = record.record_needs_student_approval()
+
+    else:
+        raise Http404
 
     edit_request_form = EditDropWDRequestForm(
         record
@@ -393,6 +417,9 @@ def drop_request(request, record_id):
                     'list-group-item-danger'
                 )
         elif request.POST.get('action') == 'update_drop_wd_request':
+            # Edits the registration itself; only the CE page renders it.
+            if not user_has_cis_role(request.user):
+                raise Http404
             edit_request_form = EditDropWDRequestForm(record, request.POST)
             if edit_request_form.is_valid():
                 edit_request_form.save(request, record)
@@ -451,7 +478,10 @@ def drop_request(request, record_id):
             'registration': record.registration
         })
 
+@require_POST
 def send_processed_email(request, record_id):
+    if not user_has_cis_role(request.user):
+        raise Http404
     record = get_object_or_404(DropWDRequest, pk=record_id)
     try:
         private_note = request.POST.get('private_note', '').strip()
@@ -479,7 +509,10 @@ def send_processed_email(request, record_id):
             'message': 'Unable to send email. ' + str(e)
         }, status=400)
 
+@require_POST
 def delete_record(request, record_id):
+    if not user_has_cis_role(request.user):
+        raise Http404
     record = get_object_or_404(DropWDRequest, pk=record_id)
     
     try:
@@ -552,6 +585,9 @@ def requests(request):
         can_submit_new_request = DropWDRequest.can_student_submit_request()
         needs_to_approve = DropWDRequest.needs_student_approval()
         url_prefix = 'student'
+
+    else:
+        raise Http404
 
     # this is hard-coded (unchanged here — the endpoint stays the instructor one)
     api_url = '/instructor/drop_wd/api/requests/?format=datatables'

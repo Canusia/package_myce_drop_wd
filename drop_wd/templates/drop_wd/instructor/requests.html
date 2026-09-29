@@ -117,9 +117,10 @@
                         let modal = "modal-bulk_actions"
 
                         $.ajax({
-                            type: "GET",
+                            type: "POST",
                             url: url,
                             data: data,
+                            headers: {'X-CSRFToken': '{{ csrf_token }}'},
                             success: function(response) {
                                 if(response.status == 'success') {
                                     swal({

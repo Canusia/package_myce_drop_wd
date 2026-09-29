@@ -112,8 +112,9 @@
 
                                     $.blockUI();
                                     $.ajax({
-                                        type: 'GET',
+                                        type: 'POST',
                                         url: "{% url 'ce_drop_wd:delete_record' record.id%}",
+                                        headers: {'X-CSRFToken': '{{ csrf_token }}'},
                                         success: function (response) {
                                             $.unblockUI();
                                             swal({

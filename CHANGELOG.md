@@ -8,6 +8,34 @@ through the `git+https://…@<tag>` line in its `webapp/requirements.txt`. The p
 keys upgrades off the version string, not the tag, so a frozen version makes an
 incremental install silently keep the old code.
 
+## v2026.2.5 — 2026-09-29
+
+### Security
+- **Every view and feed now stays inside the caller's scope.** A new
+  `registrations_for(user)` / `requests_for(user)` pair defines it: CE staff see
+  everything, instructors the sections they teach, HS admins students at their
+  schools, and students their own registrations. Before this, the request id alone
+  was the key:
+  - `bulk_actions` (`mark_as_approved`) updated any ids posted. A student could
+    approve another student's request, and any instructor could sign as the
+    instructor on a section they don't teach. It now touches only the caller's
+    requests, and is POST-only with CSRF.
+  - The HS admin request page compared a HighSchool id against a HighSchool
+    queryset (`if … in highschools: raise Http404`), which never matched, so an HS
+    admin could open, and sign for, any school's request.
+  - `submit_request` built the registration choice from the posted id, so an
+    instructor or HS admin could file against any registration. It now returns 403
+    outside scope.
+  - `delete_record` and `send_processed_email` had no role check: a student could
+    delete a request. Both are now CE-only and POST-only.
+  - The request page's `update_drop_wd_request` action (which edits the
+    registration) is CE-only; only the CE page renders it.
+- Access tests cover each role against each view.
+
+### Fixed (tests)
+- The test suite runs on tenants whose `AcademicYear` has no `campus` or whose
+  `ClassSection.class_number` is required.
+
 ## v2026.2.3 — 2026-08-29
 
 ### Added
