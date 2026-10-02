@@ -19,8 +19,9 @@ from cis.utils import (
 )
 
 from cis.models.highschool import HighSchool
+from cis.highschool_scope import picker_queryset
 from cis.models.term import Term
-from drop_wd.models import DropWDRequest
+from ..models import DropWDRequest
 
 class drop_wd_requests(forms.Form):
 
@@ -60,9 +61,7 @@ class drop_wd_requests(forms.Form):
         
         self.fields['terms'].queryset = Term.objects.all().order_by('label')
 
-        highschools = HighSchool.objects.filter(
-            status__iexact='Active'
-        ).order_by('name')
+        highschools = picker_queryset()
 
         if request:
             self.roles = request.user.get_roles()
