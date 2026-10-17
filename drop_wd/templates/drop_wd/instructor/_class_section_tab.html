@@ -1,0 +1,87 @@
+{% comment %}
+Drop/WD Request(s) tab on the instructor class section page, registered by
+drop_wd/tabs.py on the instructor portal's instructor_class_section_tabs.
+Context: class_section, drop_api_url, submit_new_drop_request_form.
+{% endcomment %}
+    <div class="card">
+        <div class="card-body">
+            <script>
+                var table_records_all_drop_requests;
+                jQuery(document).ready(function($) {
+                    table_records_all_drop_requests = $('#records_all_drop_requests')
+   .DataTable({
+        "fnDrawCallback": function( oSettings ) {
+            $.unblockUI();
+        },
+        ajax: '{{drop_api_url}}&class_section_id' + '{{class_section.id}}',
+        serverSide: true,
+        processing: true,
+        stateSave: true,
+        language: {
+            'loadingRecords': '&nbsp;',
+        },
+        'lengthMenu': [30, 50, 100],
+        'columns': [
+            {
+                'searchable': false,
+            },
+            {
+                'render': function (data, type, row, meta) {
+                    if(row.created_by === null)
+                        return '-'
+
+                    return row.created_by.last_name + ", " + row.created_by.first_name
+                }
+            },
+            {
+                'render': function (data, type, row, meta) {
+                    return row.registration.class_section.term.label
+                }
+            },
+            {
+                'render': function (data, type, row, meta) {
+                    return row.registration.student.user.first_name + ' ' + row.registration.student.user.last_name;
+                }
+            },
+            null,
+            null,
+            {
+                'render': function (data, type, row, meta) {
+                    return row.sexy_status
+                }
+            },
+        ]
+    }
+);
+
+                })
+                </script>
+            <table id="records_all_drop_requests" class="table table-striped responsive" style="width:100%">
+                <thead>
+                    <tr>
+                        <th data-data="created_on"
+                            data-name="created_on">Submitted On
+                        </th>
+                        <th data-data="created_by"
+                            data-name="created_by">Submitted By
+                        </th>
+                        <th data-data="registration.class_section.term.code"
+                            data-name="registration.class_section.term.code">Term
+                        </th>
+                        <th data-data="registration.student.user.last_name"
+                            data-name="registration.student.user.last_name">Student</th>
+                        <th data-data="registration.class_section.course.name"
+                            data-name="registration.class_section.course.name">Course
+                        </th>
+                        <th data-data="registration.class_section.class_number"
+                            data-name="registration.class_section.class_number">Section
+                        </th>
+                        <th data-data="status" data-name='status'>Status</th>
+                    </tr>
+                </thead>
+            </table>
+            <hr>
+            <h3>Submit New Request</h3>
+            {% include 'drop_wd/instructor/start_request.html' %}
+        </div>
+    </div>
