@@ -8,6 +8,16 @@ through the `git+https://…@<tag>` line in its `webapp/requirements.txt`. The p
 keys upgrades off the version string, not the tag, so a frozen version makes an
 incremental install silently keep the old code.
 
+## v2026.2.6 — 2026-10-18
+
+### Added
+- **Drop/WD tab on the instructor class section page, registered from here.** The instructor
+  portal (`package-instructor_portal` v0.0.1) no longer hardwires this tab; `drop_wd/tabs.py`
+  registers it on the portal's `instructor_class_section_tabs` registry from both app configs'
+  `ready()`. It looks up `instructor.instructor.registry` (editable submodule) and then
+  `instructor.registry`, and does nothing when neither exists, so tenants still on the in-tree
+  instructor app are unaffected.
+
 ## v2026.2.3 — 2026-08-29
 
 ### Added
