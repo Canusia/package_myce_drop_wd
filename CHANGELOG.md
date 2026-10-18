@@ -8,6 +8,14 @@ through the `git+https://…@<tag>` line in its `webapp/requirements.txt`. The p
 keys upgrades off the version string, not the tag, so a frozen version makes an
 incremental install silently keep the old code.
 
+## v2026.2.7 — 2026-10-18
+
+### Changed
+- **Instructor Drop/WD page text comes from the instructor portal package when it is
+  installed** (package-cis#82). `portal_text('instructor')` reads
+  package-instructor_portal's setting and falls back to `cis.settings.instructor_portal`,
+  so the page works on tenants on either side of the move.
+
 ## v2026.2.6 — 2026-10-18
 
 ### Added
