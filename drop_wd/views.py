@@ -523,8 +523,8 @@ def requests(request):
         menu = draw_menu(INSTRUCTOR_MENU, 'drop_wd_requests', 'drop_wd_requests', 'instructor')
         template = 'drop_wd/instructor/requests.html'
 
-        from cis.settings.instructor_portal import instructor_portal as portal_lang
-        intro = portal_lang(request).from_db().get('drop_wd_requests_blurb', 'Change me')
+        from .portal_text import portal_text
+        intro = portal_text('instructor').get('drop_wd_requests_blurb', 'Change me')
 
         form = DropWDRequestForm()
         can_submit_new_request = DropWDRequest.can_instructor_submit_request()
