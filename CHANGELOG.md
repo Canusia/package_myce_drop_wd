@@ -11,6 +11,12 @@ incremental install silently keep the old code.
 ## Unreleased
 
 ### Added
+- **Django admin for Drop/WD requests** (#5). `DropWDRequest` is registered with the
+  student, course, section, term, status and the four signatures in the list; filters
+  on status, signatures, date and term (only terms that have requests); search on
+  student name/email, course, section number and submitter. `registration`,
+  `created_by` and `processed_by` are raw-id inputs so the form never renders a select
+  over every user or registration.
 - **Drop Requests tab on the HS admin class-section page** (#16). drop_wd registers it
   on `hsadmin_class_section_tabs` (package-highschool_admin after v0.0.21) from
   `AppConfig.ready()`; the registry is looked up with `find_spec` under
