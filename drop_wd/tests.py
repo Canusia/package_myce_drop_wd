@@ -911,10 +911,48 @@ class PortalTextTests(TestCase):
         text = portal_text.portal_text('faculty')
         self.assertEqual((text['x_blurb'], text['y_blurb']), ('fac new', 'fac y'))
 
+    def test_highschool_admin_text(self):
+        from cis.settings.highschool_admin_portal import highschool_admin_portal
+        Setting.objects.update_or_create(
+            key=highschool_admin_portal.key, defaults={'value': {'x_blurb': 'hsa'}})
+        self.assertEqual(portal_text.portal_text('highschool_admin')['x_blurb'], 'hsa')
+
     def test_empty_when_nothing_owns_it(self):
+        # A cis too old to have the module (gallatin, occ, snow, suffolk).
         with self._only():
             self.assertEqual(portal_text.portal_text('instructor'), {})
             self.assertEqual(portal_text.portal_text('faculty'), {})
+            self.assertEqual(portal_text.portal_text('highschool_admin'), {})
+
+
+class ValidatorFallbackTests(SimpleTestCase):
+    """The settings form imports validators a tenant's cis may lack; the
+    bundled copies must behave like cis's."""
+
+    def test_bundled_copies(self):
+        from django.core.exceptions import ValidationError
+        from . import validators as v
+        v._validate_json('{"a": 1}')
+        v._validate_html_short_code('Hi {{ name }}')
+        self.assertEqual(v._validate_email_list('a@x.com,b@y.org'), 'a@x.com,b@y.org')
+        for check, bad in ((v._validate_json, '{oops'),
+                           (v._validate_html_short_code, '{% nope %}'),
+                           (v._validate_email_list, 'a@x.com,nope')):
+            with self.subTest(check=check.__name__):
+                with self.assertRaises(ValidationError):
+                    check(bad)
+
+    def test_used_without_cis_validators(self):
+        import importlib
+        from unittest import mock
+        from . import validators as v
+        try:
+            with mock.patch.object(portal_text, 'has_module', return_value=False):
+                importlib.reload(v)
+                self.assertIs(v.validate_json, v._validate_json)
+                self.assertIs(v.validate_html_short_code, v._validate_html_short_code)
+        finally:
+            importlib.reload(v)
 
 
 class _ScopingFixture(TestCase):

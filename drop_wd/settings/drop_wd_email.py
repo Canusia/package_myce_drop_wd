@@ -35,7 +35,7 @@ def _install_defaults(key, defaults):
             setting.save()
     return setting
 
-from cis.validators import validate_email_list, validate_html_short_code, validate_json
+from ..validators import validate_email_list, validate_html_short_code, validate_json
 
 class SettingForm(forms.Form):
 
