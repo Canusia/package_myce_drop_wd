@@ -1494,3 +1494,20 @@ class RoleSignatureScopingTests(_ScopingFixture):
                 self.assertIn(f'portal={portal}', response.context['api_url'])
         self.assertEqual(
             self.client.get(reverse('student_drop_wd:requests')).status_code, 404)
+
+
+class HistoryUserTests(SimpleTestCase):
+    """history_user comes from cis's request middleware when a tenant doesn't
+    load simple_history's HistoryRequestMiddleware."""
+
+    def test_falls_back_to_cis_current_request(self):
+        from types import SimpleNamespace
+        from .models import _history_user
+        user = SimpleNamespace(is_authenticated=True)
+        with mock.patch('cis.middleware.current_request',
+                        return_value=SimpleNamespace(user=user)):
+            self.assertIs(_history_user(), user)
+        with mock.patch('cis.middleware.current_request', return_value=None):
+            self.assertIsNone(_history_user())
+        anonymous = SimpleNamespace(user=SimpleNamespace(is_authenticated=False))
+        self.assertIsNone(_history_user(request=anonymous))

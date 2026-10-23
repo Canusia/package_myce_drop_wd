@@ -17,6 +17,16 @@ from simple_history.models import HistoricalRecords
 from cis.models.section import StudentRegistration
 from cis.utils import model_as_HTML
 
+def _history_user(request=None, **kwargs):
+    """Who made a history row: simple_history's HistoryRequestMiddleware
+    request when the tenant loads it, else cis's RequestMiddleware one."""
+    if request is None:
+        from cis.middleware import current_request
+        request = current_request()
+    user = getattr(request, 'user', None)
+    return user if getattr(user, 'is_authenticated', False) else None
+
+
 class DropWDRequest(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     created_on = models.DateTimeField(auto_now_add=True)
@@ -107,7 +117,7 @@ class DropWDRequest(models.Model):
     # Change history (#4). Straight from simple_history rather than myce's
     # MyCEBaseModel: most tenants have no myce/models/base.py, and that base
     # would also add four columns this model doesn't need.
-    history = HistoricalRecords()
+    history = HistoricalRecords(get_user=_history_user)
 
     class Meta:
         unique_together = ['registration']
@@ -385,20 +395,20 @@ class DropWDRequest(models.Model):
         
         if 'parent' in email_settings.get('notification_list', []):    
             try:
-                if validate_email(instance.registration.student.parent_email):
-                    to.append(
-                        instance.registration.student.parent_email
-                    )
-            except:
+                # validate_email raises on a bad address and returns None on
+                # a good one -- never `if validate_email(...)`.
+                validate_email(instance.registration.student.parent_email)
+                to.append(instance.registration.student.parent_email)
+            except Exception:
                 ...
 
         if 'instructor' in email_settings.get('notification_list', []):
             try:
-                if validate_email(instance.registration.class_section.teacher.user.email):
-                    to.append(
-                        instance.registration.class_section.teacher.user.email
-                    )
-            except:
+                # validate_email raises on a bad address and returns None on
+                # a good one -- never `if validate_email(...)`.
+                validate_email(instance.registration.class_section.teacher.user.email)
+                to.append(instance.registration.class_section.teacher.user.email)
+            except Exception:
                 ...
     
         if instance.created_by:
