@@ -61,8 +61,24 @@ SIGNATURE_FIELDS = {
 
 
 def user_has_role(user, role):
+    """Cached on the user object: a single page asks the same question many
+    times, and each cis check is a groups query."""
     check = ROLE_CHECKS.get(role)
-    return bool(check and check(user))
+    if check is None:
+        return False
+    cache = user.__dict__.setdefault('_drop_wd_roles', {})
+    if role not in cache:
+        cache[role] = bool(check(user))
+    return cache[role]
+
+
+def submitting_roles(user):
+    """Roles the user holds that the settings let start a request."""
+    from .settings.drop_wd_email import drop_wd_email
+    # The same 'start_new_request' list DropWDRequest.can_*_submit_request()
+    # read, read once. CE may always start one.
+    allowed = {CE} | set(drop_wd_email.from_db().get('start_new_request') or [])
+    return [role for role in ROLES if role in allowed and user_has_role(user, role)]
 
 
 def acting_role(request):
@@ -71,7 +87,9 @@ def acting_role(request):
     Taken from the portal namespace the URL resolved through
     (instructor_drop_wd, highschool_admin_drop_wd, ...), so a user holding
     several roles acts as the portal they are on. A view reached through some
-    other URLconf falls back to the first role the user holds.
+    other URLconf falls back to the first role the user holds -- for reads
+    only: a write with no portal to go by gets None, so it can't sign in a
+    role the caller never chose.
     """
     match = getattr(request, 'resolver_match', None)
     app_names = getattr(match, 'app_names', None) or []
@@ -79,6 +97,9 @@ def acting_role(request):
 
     if portal_role is not None:
         return portal_role if user_has_role(request.user, portal_role) else None
+
+    if request.method not in ('GET', 'HEAD'):
+        return None
 
     for role in ROLES:
         if user_has_role(request.user, role):

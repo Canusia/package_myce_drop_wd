@@ -77,31 +77,37 @@ def create_new_request(sender, instance, created, **kwargs):
                 # as counselor for a student at their schools, as the student
                 # on their own registration. Not the union of their roles, or a
                 # teacher who is also an HS admin would sign as instructor for
-                # a colleague's section (#12).
+                # a colleague's section (#12). And only in a role the settings
+                # let start a request at all.
                 from .scoping import (
                     INSTRUCTOR, HIGHSCHOOL_ADMIN, STUDENT,
                     registration_in_role_scope,
+                    submitting_roles,
                 )
 
+                may_submit_as = submitting_roles(user)
+
                 def own_signature(role):
-                    if registration_in_role_scope(user, role, instance.registration):
+                    if role in may_submit_as and \
+                            registration_in_role_scope(user, role, instance.registration):
                         return 'Approved'
                     return 'Pending'
 
-                if DropWDRequest.needs_instructor_approval():
-                    DropWDRequest.objects.filter(
-                        id=instance.id
-                    ).update(instructor_signature=own_signature(INSTRUCTOR))
-
-                if DropWDRequest.needs_student_approval():
-                    DropWDRequest.objects.filter(
-                        id=instance.id
-                    ).update(student_signature=own_signature(STUDENT))
-
-                if DropWDRequest.needs_administrator_approval():
-                    DropWDRequest.objects.filter(
-                        id=instance.id
-                    ).update(counselor_signature=own_signature(HIGHSCHOOL_ADMIN))
+                # save(update_fields) rather than QuerySet.update(), so the
+                # pre-approval is recorded in the request's history (#4).
+                changed = []
+                for needed, field, role in (
+                    (DropWDRequest.needs_instructor_approval(), 'instructor_signature', INSTRUCTOR),
+                    (DropWDRequest.needs_student_approval(), 'student_signature', STUDENT),
+                    (DropWDRequest.needs_administrator_approval(), 'counselor_signature', HIGHSCHOOL_ADMIN),
+                ):
+                    if needed:
+                        value = own_signature(role)
+                        if getattr(instance, field) != value:
+                            setattr(instance, field, value)
+                            changed.append(field)
+                if changed:
+                    instance.save(update_fields=changed)
 
             else:
                 user = None

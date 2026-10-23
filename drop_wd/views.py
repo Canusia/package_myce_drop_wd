@@ -3,7 +3,7 @@ import uuid
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.http import JsonResponse, Http404
 from django.shortcuts import render, get_object_or_404
 from django.urls import NoReverseMatch, reverse
@@ -15,8 +15,6 @@ from rest_framework import viewsets
 from cis.models.term import Term
 
 from cis.utils import (
-    user_has_instructor_role,
-    user_has_highschool_admin_role,
     user_has_student_role,
     user_has_cis_role,
     INSTRUCTOR_user_only,
@@ -44,11 +42,13 @@ from .serializers import (
     DropdownRegistrationSerializer
 )
 from .settings.drop_wd_email import drop_wd_email as drop_wd_settings
+from .portal_text import portal_text
 from .scoping import (
     CE, INSTRUCTOR, HIGHSCHOOL_ADMIN, STUDENT, ROLES, SIGNATURE_FIELDS,
     acting_role,
     registrations_for,
     requests_for,
+    submitting_roles,
     user_has_role,
 )
 
@@ -78,7 +78,11 @@ class ClassRegistrationViewSet(viewsets.ReadOnlyModelViewSet):
         try:
             allowed_statuses = drop_wd_settings.get_allowed_registration_statuses()
 
-            records = StudentRegistration.objects.filter(
+            # The same scope submit_request accepts: the union over the roles
+            # that may start a request, not the first role the user holds.
+            records = registrations_for(
+                user, roles=submitting_roles(user)
+            ).filter(
                 class_section__term__id=term,
                 class_section__id=class_section
             ).select_related('student__user')
@@ -86,24 +90,6 @@ class ClassRegistrationViewSet(viewsets.ReadOnlyModelViewSet):
             if allowed_statuses:
                 records = records.filter(status__in=allowed_statuses)
 
-            if user_has_cis_role(user):
-                pass
-            elif user_has_student_role(user):
-                records = records.filter(
-                    student__user=user
-                )
-            elif user_has_instructor_role(user):
-                records = records.filter(
-                    class_section__teacher__user=user
-                )
-            elif user_has_highschool_admin_role(user):
-                user = HSAdministrator.objects.get(user__id=user.id)
-                highschools = user.get_highschools()
-
-                records = records.filter(
-                    student__highschool__id__in=highschools.values_list('id', flat=True)
-                )
-            
             records = records.order_by(
                 'student__user__last_name', 'student__user__first_name'
             )
@@ -133,24 +119,24 @@ class ClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
 
             if allowed_section_statuses:
                 records = records.filter(status__in=allowed_section_statuses)
-            if user_has_instructor_role(user):
-                records = records.filter(
-                    teacher__user=user
-                )
-            elif user_has_highschool_admin_role(user):
-                user = HSAdministrator.objects.get(user__id=user.id)
-                highschools = user.get_highschools()
 
-                records = records.filter(
-                    highschool__id__in=highschools.values_list('id', flat=True)
-                )
-            elif user_has_student_role(user):
-                records = records.filter(
-                    id__in=StudentRegistration.objects.filter(
-                        student__user=user
-                    ).values_list('class_section__id')
-                )
-            
+            # The roles that may start a request, together -- not the first
+            # role the user holds. Their own sections for instructors, their
+            # schools' sections for HS admins, plus any section holding a
+            # registration submit_request would accept (an HS admin's student
+            # in a section hosted elsewhere, a student's own).
+            roles = submitting_roles(user)
+            if CE not in roles:
+                scope = Q(id__in=registrations_for(
+                    user, roles=roles).values('class_section_id'))
+                if INSTRUCTOR in roles:
+                    scope |= Q(teacher__user=user)
+                if HIGHSCHOOL_ADMIN in roles:
+                    hsadmin = HSAdministrator.objects.filter(user__id=user.id).first()
+                    if hsadmin is not None:
+                        scope |= Q(highschool__in=hsadmin.get_highschools())
+                records = records.filter(scope)
+
             records = records.order_by(
                 'course__name'
             )
@@ -230,29 +216,13 @@ class DropWDRequestViewSet(viewsets.ReadOnlyModelViewSet):
 
         return records
 
-def _submitting_roles(user):
-    """Roles the user holds that may currently start a request."""
-    allowed = {
-        CE: True,
-        INSTRUCTOR: DropWDRequest.can_instructor_submit_request(),
-        HIGHSCHOOL_ADMIN: DropWDRequest.can_administrator_submit_request(),
-        STUDENT: DropWDRequest.can_student_submit_request(),
-    }
-    return [role for role in ROLES if allowed[role] and user_has_role(user, role)]
-
-
 def submit_request(request):
     """
     Called when a new request is started. Could be initiated by teacher, counselor, or student
     """
     template_name = 'drop_wd/start_request.html'
 
-    if not (
-        user_has_cis_role(request.user) or
-        (user_has_instructor_role(request.user) and DropWDRequest.can_instructor_submit_request()) or
-        (user_has_highschool_admin_role(request.user) and DropWDRequest.can_administrator_submit_request()) or
-        (user_has_student_role(request.user) and DropWDRequest.can_student_submit_request())
-    ):
+    if not submitting_roles(request.user):
         return JsonResponse({
             'title': 'Not allowed',
             'message': 'You are not allowed to submit drop requests.',
@@ -260,22 +230,28 @@ def submit_request(request):
         }, status=403)
 
     if request.method == 'POST':
+        # Only file for a registration inside the scope of a role that may
+        # submit (#8). Checked before the form runs, so an out-of-scope id
+        # can't probe for an existing request via the form's errors.
+        registration_id = request.POST.get('registration', '').strip()
+        if registration_id:
+            try:
+                registration_id = uuid.UUID(registration_id)
+            except ValueError:
+                registration_id = None
+            if registration_id is None or not registrations_for(
+                    request.user, roles=submitting_roles(request.user)).filter(
+                    pk=registration_id).exists():
+                return JsonResponse({
+                    'title': 'Not allowed',
+                    'message': 'You are not allowed to submit a request for this registration.',
+                    'status': 'error'
+                }, status=403)
+
         if user_has_student_role(request.user):
             form = StudentDropWDRequestForm(student=request.user.student, data=request.POST)
         else:
             form = DropWDRequestForm(data=request.POST)
-
-        if form.is_valid() and not registrations_for(
-                request.user, roles=_submitting_roles(request.user)).filter(
-                pk=form.cleaned_data['registration'].pk).exists():
-            # The form's registration queryset is built from the posted id,
-            # so it accepts any registration; only file for one inside the
-            # scope of a role that may submit (#8).
-            return JsonResponse({
-                'title': 'Not allowed',
-                'message': 'You are not allowed to submit a request for this registration.',
-                'status': 'error'
-            }, status=403)
 
         if form.is_valid():
             try:
@@ -343,14 +319,21 @@ def do_bulk_action(request):
         except ValueError:
             pass
 
-    updated = requests_for(request.user, role=role).filter(
-        id__in=valid_ids
-    ).update(**{field: 'Approved'})
+    # Only still-Pending signatures, so a bulk click can't overturn an earlier
+    # 'Not Approved' or flip 'Not Needed'; and save() per row rather than
+    # QuerySet.update(), so each change lands in the request's history (#4).
+    pending = requests_for(request.user, role=role).filter(
+        id__in=valid_ids, **{field: 'Pending'})
+    updated = 0
+    for record in pending:
+        setattr(record, field, 'Approved')
+        record.save(update_fields=[field])
+        updated += 1
     skipped = len(set(ids)) - updated
 
     message = f'Successfully marked {updated} request(s) as approved.'
     if skipped:
-        message += f' {skipped} request(s) were skipped because you cannot approve them.'
+        message += f' {skipped} request(s) were skipped because they are not awaiting your approval.'
 
     return JsonResponse({
         'message': message,
@@ -580,7 +563,6 @@ def requests(request):
         menu = draw_menu(INSTRUCTOR_MENU, 'drop_wd_requests', 'drop_wd_requests', 'instructor')
         template = 'drop_wd/instructor/requests.html'
 
-        from .portal_text import portal_text
         intro = portal_text('instructor').get('drop_wd_requests_blurb', 'Change me')
 
         form = DropWDRequestForm()
@@ -592,8 +574,7 @@ def requests(request):
         menu = draw_menu(HS_ADMIN_MENU, 'drop_wd_requests', 'drop_wd_requests', 'highschool_admin')
         template = 'drop_wd/highschool_admin/requests.html'
 
-        from cis.settings.highschool_admin_portal import highschool_admin_portal as portal_lang
-        intro = portal_lang(request).from_db().get('drop_wd_requests_blurb', 'Change me')
+        intro = portal_text('highschool_admin').get('drop_wd_requests_blurb', 'Change me')
 
         form = DropWDRequestForm()
         can_submit_new_request = DropWDRequest.can_administrator_submit_request()

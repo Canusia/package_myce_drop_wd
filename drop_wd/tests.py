@@ -613,6 +613,13 @@ class DropdownPaginationTests(TestCase):
             course=self.course, term=self.term, highschool=self.hs,
             teacher=self.teacher)
 
+        # The feeds serve the New Request form, so they follow who may submit.
+        from cis.models.settings import Setting
+        from .settings.drop_wd_email import drop_wd_email
+        Setting.objects.update_or_create(
+            key=drop_wd_email.key,
+            defaults={'value': {'start_new_request': ['instructor']}})
+
     def tearDown(self):
         from django.contrib.auth.signals import user_logged_in
         user_logged_in.receivers = self._saved_receivers
@@ -1042,6 +1049,9 @@ class AccessScopingTests(_ScopingFixture):
         self.assertNotEqual(request_b.counselor_signature, 'Approved')
 
     def test_bulk_approve_own_request(self):
+        from .models import DropWDRequest
+        DropWDRequest.objects.filter(pk=self.a['request'].pk).update(
+            instructor_signature='Pending')
         self._bulk_approve(self.a['teacher'], self.a)
         self.assertEqual(self._refresh(self.a).instructor_signature, 'Approved')
 
@@ -1317,6 +1327,117 @@ class RoleSignatureScopingTests(_ScopingFixture):
         request = DropWDRequest.objects.get(registration=registration)
         self.assertEqual(request.counselor_signature, 'Approved')
         self.assertEqual(request.instructor_signature, 'Pending')
+
+    def _set(self, **values):
+        from cis.models.settings import Setting
+        from .settings.drop_wd_email import drop_wd_email
+        setting = Setting.objects.get(key=drop_wd_email.key)
+        setting.value = {**setting.value, **values}
+        setting.save()
+
+    def _submit(self, user, registration):
+        self.client.force_login(user)
+        return self.client.post(reverse('instructor_drop_wd:submit_request'), {
+            'term': str(self.term.id),
+            'class_section': str(registration.class_section.id),
+            'registration': str(registration.id),
+            'note': 'please drop',
+        })
+
+    # -- bulk approve keeps decisions and history ------------------------
+
+    def test_bulk_does_not_overturn_an_earlier_decision(self):
+        from .models import DropWDRequest
+        DropWDRequest.objects.filter(pk=self.a['request'].pk).update(
+            counselor_signature='Not Approved')
+        response = self._bulk(self.hsadmin, 'highschool_admin_drop_wd', self.a)
+        self.assertEqual(response.json()['updated'], 0)
+        self.assertEqual(self._refresh(self.a).counselor_signature, 'Not Approved')
+
+    def test_bulk_approval_is_recorded_in_history(self):
+        request = self.a['request']
+        before = request.history.count()
+        self._bulk(self.hsadmin, 'highschool_admin_drop_wd', self.a)
+        self.assertEqual(request.history.count(), before + 1)
+        self.assertEqual(request.history.first().counselor_signature, 'Approved')
+
+    # -- submit-time pre-approval ----------------------------------------
+
+    def test_preapproval_only_in_a_role_that_may_submit(self):
+        # dual teaches own's section and is HS admin at its school, but only
+        # HS admins may start a request: no instructor pre-approval.
+        from .models import DropWDRequest
+        self._set(start_new_request=['highschool_admin'])
+        registration = self.own['registration']
+        DropWDRequest.objects.filter(registration=registration).delete()
+
+        response = self._submit(self.dual, registration)
+        self.assertEqual(response.status_code, 200, response.content)
+        request = DropWDRequest.objects.get(registration=registration)
+        self.assertEqual(request.counselor_signature, 'Approved')
+        self.assertEqual(request.instructor_signature, 'Pending')
+        self.assertEqual(request.history.first().counselor_signature, 'Approved')
+
+    def test_submit_with_a_malformed_registration_id_is_refused_not_500(self):
+        self._set(start_new_request=['highschool_admin'])
+        self.client.force_login(self.hsadmin)
+        for bad in ('not-a-uuid', '1'):
+            with self.subTest(bad=bad):
+                response = self.client.post(
+                    reverse('instructor_drop_wd:submit_request'),
+                    {'term': str(self.term.id), 'class_section': 'x',
+                     'registration': bad, 'note': ''})
+                self.assertEqual(response.status_code, 403)
+
+    def test_submit_out_of_scope_does_not_reveal_an_existing_request(self):
+        # b's registration already has a request; the reply must not say so.
+        self._set(start_new_request=['highschool_admin'])
+        response = self._submit(self.hsadmin, self.b['registration'])
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn(b'already exists', response.content)
+
+    # -- dropdown feeds use every role that may submit ---------------------
+
+    def test_dropdown_feeds_union_the_submitting_roles(self):
+        # As instructor dual sees only own's section; as HS admin, a's too.
+        self._set(start_new_request=['instructor', 'highschool_admin'])
+        self.client.force_login(self.dual)
+
+        sections = self.client.get(
+            reverse('instructor_drop_wd:instructor_drop_wd_class_sections-list'),
+            {'term': str(self.term.id)}).json()
+        self.assertEqual(
+            {row['id'] for row in sections},
+            {str(self.own['registration'].class_section_id),
+             str(self.a['section'].id)})
+
+        students = self.client.get(
+            reverse('instructor_drop_wd:'
+                    'instructor_drop_wd_class_section_registrations-list'),
+            {'term': str(self.term.id),
+             'class_section': str(self.a['section'].id)}).json()
+        self.assertEqual([row['id'] for row in students],
+                         [str(self.a['registration'].id)])
+
+    def test_dropdown_feeds_empty_for_a_role_that_may_not_submit(self):
+        self._set(start_new_request=['highschool_admin'])
+        self.client.force_login(self.a['teacher'])
+        sections = self.client.get(
+            reverse('instructor_drop_wd:instructor_drop_wd_class_sections-list'),
+            {'term': str(self.term.id)}).json()
+        self.assertEqual(sections, [])
+
+    # -- acting role ---------------------------------------------------------
+
+    def test_acting_role_has_no_fallback_for_writes(self):
+        from django.test import RequestFactory
+        from .scoping import acting_role, INSTRUCTOR
+        factory = RequestFactory()
+        for method, expected in (('get', INSTRUCTOR), ('post', None)):
+            with self.subTest(method=method):
+                request = getattr(factory, method)('/')
+                request.user = self.dual
+                self.assertEqual(acting_role(request), expected)
 
     def test_requests_page_follows_portal(self):
         self.client.force_login(self.dual)

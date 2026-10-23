@@ -22,6 +22,10 @@ PORTAL_TEXT_SOURCES = {
         ('faculty.settings.faculty_portal_text', 'faculty_portal_text'),
         ('cis.settings.faculty_portal', 'faculty_portal'),
     ),
+    # Older in-repo cis copies (gallatin, occ, snow, suffolk) don't have it.
+    'highschool_admin': (
+        ('cis.settings.highschool_admin_portal', 'highschool_admin_portal'),
+    ),
 }
 
 

@@ -1,3 +1,4 @@
+import uuid
 import json
 from django import forms
 from django.forms import ModelForm
@@ -318,6 +319,13 @@ class DropWDSignatureForm(forms.Form):
         return record
 
 
+def _uuid_or_none(value):
+    try:
+        return uuid.UUID(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
 class DropWDRequestForm(forms.Form):
     term = forms.ModelChoiceField(
         queryset=None
@@ -401,16 +409,18 @@ class DropWDRequestForm(forms.Form):
             self.fields['registration'].empty_label = 'Select'
 
         if kwargs.get('data'):
-            if self.data.get('class_section'):
-                class_section = self.data['class_section']
+            # A malformed id is just no choice (a field error), not a 500.
+            class_section = _uuid_or_none(self.data.get('class_section'))
+            if class_section:
                 self.fields['class_section'].queryset = ClassSection.objects.filter(
                     id=class_section
                 )
 
-            registration = self.data['registration']
-            self.fields['registration'].queryset = StudentRegistration.objects.filter(
-                id=registration
-            )
+            registration = _uuid_or_none(self.data.get('registration'))
+            if registration:
+                self.fields['registration'].queryset = StudentRegistration.objects.filter(
+                    id=registration
+                )
 
     def clean_registration(self):
         regis = self.cleaned_data.get('registration')
