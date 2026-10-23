@@ -105,6 +105,7 @@
                             <div class="card border-top-0">
                                 <div class="card-body">
 
+                                    {% if can_sign_as_student %}
                                     <h5 class="card-title">Student Signature</h5>
                                     {%if record.has_student_signed %}
                                     <p class="alert alert-success">Received</p>
@@ -136,6 +137,7 @@
                                             name="btn_submit_request" class="btn btn-primary submit" />
                                     </form>
                                     {%endif%}
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>

@@ -138,5 +138,13 @@ In dev (submodule), the module path is `drop_wd.drop_wd.*`. In production (pip i
 
 ## URL Namespaces
 - `ce_drop_wd` — CE staff
-- `instructor_drop_wd` — Instructors
-- `highschool_admin` / `student` — HS admins and students (reuse instructor template)
+- `instructor_drop_wd` — Instructors (also hosts the shared API feeds and `submit_request`)
+- `highschool_admin_drop_wd` / `student_drop_wd` — HS admins and students (reuse instructor template)
+
+### Access scoping (`scoping.py`)
+The namespace a view resolved through is the **acting role** (`acting_role(request)`);
+a portal whose role the user doesn't hold gets nothing. Any signature write
+(review, bulk approve, submit-time pre-approval) must be checked against that one
+role's scope — `requests_for(user, role=…)` — never the union of the user's roles,
+or a teacher who is also an HS admin signs as instructor for a colleague's section.
+Student/parent signatures come only from the student on their own request.

@@ -1,3 +1,4 @@
+import itertools
 import json
 
 from django.test import SimpleTestCase, TestCase
@@ -20,6 +21,24 @@ from .services.requests_table import (
 from cis.models.settings import Setting
 
 from . import portal_text
+
+
+def _make_academic_year(name, campus):
+    """Tenants' cis copies differ: some AcademicYears have a campus FK."""
+    from cis.models.term import AcademicYear
+    fields = {f.name for f in AcademicYear._meta.get_fields()}
+    extra = {'campus': campus} if 'campus' in fields else {}
+    return AcademicYear.objects.create(name=name, **extra)
+
+
+_class_numbers = itertools.count(90000)
+
+
+def _make_section(**fields):
+    """Some tenants require ClassSection.class_number; give each a unique one."""
+    from cis.models.section import ClassSection
+    fields.setdefault('class_number', next(_class_numbers))
+    return ClassSection.objects.create(**fields)
 
 
 class RequestsTableServiceTests(SimpleTestCase):
@@ -321,7 +340,7 @@ class RequestsSummaryTests(TestCase):
         self.client.force_login(self.user)
 
         campus = Campus.objects.create(name='Sum Campus', code='SUMC')
-        year = AcademicYear.objects.create(name='2029-2030', campus=campus)
+        year = _make_academic_year('2029-2030', campus)
         self.term_a = Term.objects.create(academic_year=year, code='SA',
                                           label='Sum Term A')
         self.term_b = Term.objects.create(academic_year=year, code='SB',
@@ -331,9 +350,9 @@ class RequestsSummaryTests(TestCase):
                                        name='SUM 300', title='Summary 300',
                                        campus=campus)
         self.hs = HighSchool.objects.create(name='Summary HS', code='SUMHS')
-        self.section_a = ClassSection.objects.create(
+        self.section_a = _make_section(
             course=course, term=self.term_a, highschool=self.hs)
-        self.section_b = ClassSection.objects.create(
+        self.section_b = _make_section(
             course=course, term=self.term_b, highschool=self.hs)
 
         # 2 requests in term A (one processed), 1 in term B.
@@ -493,7 +512,7 @@ class DropdownPaginationTests(TestCase):
         self.client.force_login(user)
 
         campus = Campus.objects.create(name='Pag Campus', code='PAGC')
-        year = AcademicYear.objects.create(name='2031-2032', campus=campus)
+        year = _make_academic_year('2031-2032', campus)
         self.term = Term.objects.create(
             academic_year=year, code='PG', label='Pag Term')
         cohort = Cohort.objects.create(designator='PG', name='Pag Cohort')
@@ -502,7 +521,7 @@ class DropdownPaginationTests(TestCase):
             title='Pagination 400', campus=campus)
         self.hs = HighSchool.objects.create(name='Pag HS', code='PAGHS')
 
-        self.section = ClassSection.objects.create(
+        self.section = _make_section(
             course=self.course, term=self.term, highschool=self.hs,
             teacher=self.teacher)
 
@@ -589,7 +608,7 @@ class DropdownPaginationTests(TestCase):
         other_user = CustomUser.objects.create_user(
             email='pag-other@example.com', username='pag-other@example.com',
             password='pw', first_name='O', last_name='Ther')
-        other_section = ClassSection.objects.create(
+        other_section = _make_section(
             course=self.course, term=self.term, highschool=self.hs,
             teacher=Teacher.objects.create(user=other_user))
 
@@ -616,7 +635,7 @@ class DropdownPaginationTests(TestCase):
         from cis.models.section import ClassSection
 
         for index in range(self.SECTION_COUNT - 1):   # one exists from setUp
-            ClassSection.objects.create(
+            _make_section(
                 course=self.course, term=self.term, highschool=self.hs,
                 teacher=self.teacher, class_number=f'{40000 + index}')
 
@@ -660,7 +679,7 @@ class DropdownPaginationTests(TestCase):
         from cis.models.section import ClassSection
 
         for index in range(self.SECTION_COUNT - 1):
-            ClassSection.objects.create(
+            _make_section(
                 course=self.course, term=self.term, highschool=self.hs,
                 teacher=self.teacher, class_number=f'{40000 + index}')
 
@@ -801,3 +820,430 @@ class PortalTextTests(TestCase):
         with self._only():
             self.assertEqual(portal_text.portal_text('instructor'), {})
             self.assertEqual(portal_text.portal_text('faculty'), {})
+
+
+class _ScopingFixture(TestCase):
+    """Two schools, each with a teacher, a section, a student and a request,
+    plus a CE user and an HS admin at school a."""
+
+    def setUp(self):
+        from django.contrib.auth.models import Group
+        from django.contrib.auth.signals import user_logged_in
+        from cis.models.course import Campus, Cohort, Course
+        from cis.models.customuser import CustomUser
+        from cis.models.highschool import HighSchool
+        from cis.models.highschool_administrator import (
+            HSAdministrator, HSAdministratorPosition, HSPosition)
+        from cis.models.section import ClassSection, StudentRegistration
+        from cis.models.student import Student
+        from cis.models.teacher import Teacher
+        from cis.models.term import AcademicYear, Term
+        from .models import DropWDRequest
+
+        self._saved_receivers = list(user_logged_in.receivers)
+        user_logged_in.receivers = []
+
+        for name in ('ce', 'instructor', 'student', 'highschool_admin'):
+            Group.objects.get_or_create(name=name)
+        CustomUser.objects.get_or_create(
+            username='cron', defaults={'email': 'cron@example.com'})
+
+        def user(slug, group):
+            u = CustomUser.objects.create_user(
+                email=f'{slug}@example.com', username=f'{slug}@example.com',
+                password='pw', first_name=slug.title(), last_name='Scope')
+            u.groups.add(Group.objects.get(name=group))
+            return u
+        self._user = user
+
+        campus = Campus.objects.create(name='Scope Campus', code='SCPC')
+        year = _make_academic_year('2032-2033', campus)
+        self.term = Term.objects.create(
+            academic_year=year, code='SC', label='Scope Term')
+        cohort = Cohort.objects.create(designator='SC', name='Scope Cohort')
+        course = Course.objects.create(
+            cohort=cohort, catalog_number='101', name='SC 101',
+            title='Scope 101', campus=campus)
+        self.course = course
+
+        self.ce = user('ce', 'ce')
+        side = {}
+        for key in ('a', 'b'):
+            hs = HighSchool.objects.create(name=f'HS {key}', code=f'SCHS{key}')
+            teacher_user = user(f'teach{key}', 'instructor')
+            section = _make_section(
+                course=course, term=self.term, highschool=hs,
+                teacher=Teacher.objects.create(user=teacher_user))
+            student_user = user(f'stud{key}', 'student')
+            registration = StudentRegistration.objects.create(
+                student=Student.objects.create(user=student_user, highschool=hs),
+                class_section=section, status='enrolled',
+                status_changed_on={'applied_on': '01/01/2032'})
+            side[key] = {
+                'hs': hs, 'teacher': teacher_user, 'student': student_user,
+                'section': section, 'registration': registration,
+                'request': DropWDRequest.objects.create(registration=registration),
+            }
+        self.a, self.b = side['a'], side['b']
+
+        self.hsadmin = user('hsadmin', 'highschool_admin')
+        HSAdministratorPosition.objects.create(
+            hsadmin=HSAdministrator.objects.create(user=self.hsadmin),
+            highschool=self.a['hs'],
+            position=HSPosition.objects.create(name='Scope Counselor'),
+            status='Active')
+
+    def tearDown(self):
+        from django.contrib.auth.signals import user_logged_in
+        user_logged_in.receivers = self._saved_receivers
+
+    def _refresh(self, side):
+        side['request'].refresh_from_db()
+        return side['request']
+
+
+class AccessScopingTests(_ScopingFixture):
+    """Every view and feed that takes a request or registration id must stay
+    inside the caller's scope: CE all, instructors their sections, HS admins
+    their schools, students their own. Before this the id alone was the key: a
+    student could approve or delete anyone's request, an HS admin could open
+    and sign for another school, and an instructor could file against a
+    section they don't teach (#8, #9, #10).
+    """
+
+    # -- registrations_for -----------------------------------------------
+
+    def test_registrations_for_each_role(self):
+        from .views import registrations_for
+        reg_a, reg_b = self.a['registration'], self.b['registration']
+        cases = [
+            (self.ce, {reg_a, reg_b}),
+            (self.a['teacher'], {reg_a}),
+            (self.hsadmin, {reg_a}),
+            (self.b['student'], {reg_b}),
+        ]
+        for user, expected in cases:
+            with self.subTest(user=user.email):
+                self.assertEqual(set(registrations_for(user)), expected)
+
+    def test_requests_feed_is_scoped(self):
+        url = reverse('instructor_drop_wd:instructor_drop_wd_requests-list')
+        for user, expected in [(self.hsadmin, self.a), (self.b['student'], self.b)]:
+            with self.subTest(user=user.email):
+                self.client.force_login(user)
+                data = self.client.get(url, {'format': 'json'}).json()
+                rows = data['results'] if isinstance(data, dict) else data
+                self.assertEqual(
+                    [r['id'] for r in rows], [str(expected['request'].id)])
+
+    # -- bulk actions ----------------------------------------------------
+
+    def _bulk_approve(self, user, side):
+        self.client.force_login(user)
+        return self.client.post(
+            reverse('instructor_drop_wd:bulk_actions'),
+            {'action': 'mark_as_approved', 'ids[]': [str(side['request'].id)]})
+
+    def test_bulk_approve_skips_requests_outside_scope(self):
+        self._bulk_approve(self.a['student'], self.b)
+        self._bulk_approve(self.a['teacher'], self.b)
+        self._bulk_approve(self.hsadmin, self.b)
+        request_b = self._refresh(self.b)
+        self.assertNotEqual(request_b.student_signature, 'Approved')
+        self.assertNotEqual(request_b.instructor_signature, 'Approved')
+        self.assertNotEqual(request_b.counselor_signature, 'Approved')
+
+    def test_bulk_approve_own_request(self):
+        self._bulk_approve(self.a['teacher'], self.a)
+        self.assertEqual(self._refresh(self.a).instructor_signature, 'Approved')
+
+    def test_bulk_action_rejects_get(self):
+        self.client.force_login(self.a['teacher'])
+        response = self.client.get(
+            reverse('instructor_drop_wd:bulk_actions'),
+            {'action': 'mark_as_approved', 'ids[]': [str(self.a['request'].id)]})
+        self.assertEqual(response.status_code, 405)
+        self.assertNotEqual(self._refresh(self.a).instructor_signature, 'Approved')
+
+    # -- request page ----------------------------------------------------
+
+    def test_hsadmin_cannot_open_or_sign_another_schools_request(self):
+        self.client.force_login(self.hsadmin)
+        url = reverse('highschool_admin_drop_wd:request', args=[self.b['request'].id])
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.client.post(url, {
+            'id': str(self.b['request'].id), 'signature_type': 'parent',
+            'signature': 'forged'})
+        self.assertNotEqual(self._refresh(self.b).parent_signature, 'forged')
+
+    def test_hsadmin_can_open_own_schools_request(self):
+        self.client.force_login(self.hsadmin)
+        url = reverse('highschool_admin_drop_wd:request', args=[self.a['request'].id])
+        self.assertEqual(self.client.get(url).status_code, 200)
+
+    def test_only_ce_can_edit_the_registration(self):
+        self.client.force_login(self.a['teacher'])
+        url = reverse('instructor_drop_wd:request', args=[self.a['request'].id])
+        response = self.client.post(url, {
+            'action': 'update_drop_wd_request', 'status': 'dropped'})
+        self.assertEqual(response.status_code, 404)
+        self.a['registration'].refresh_from_db()
+        self.assertEqual(self.a['registration'].status, 'enrolled')
+
+    # -- CE-only actions -------------------------------------------------
+
+    def test_delete_is_ce_only_and_post_only(self):
+        from .models import DropWDRequest
+        url = reverse('ce_drop_wd:delete_record', args=[self.a['request'].id])
+
+        self.client.force_login(self.a['student'])
+        self.assertEqual(self.client.post(url).status_code, 404)
+
+        self.client.force_login(self.ce)
+        self.assertEqual(self.client.get(url).status_code, 405)
+        self.assertTrue(DropWDRequest.objects.filter(pk=self.a['request'].pk).exists())
+
+        self.assertEqual(self.client.post(url).json()['status'], 'success')
+        self.assertFalse(DropWDRequest.objects.filter(pk=self.a['request'].pk).exists())
+
+    def test_send_processed_email_is_ce_only(self):
+        self.client.force_login(self.a['student'])
+        url = reverse('ce_drop_wd:send_processed_email', args=[self.a['request'].id])
+        self.assertEqual(self.client.post(url).status_code, 404)
+
+    # -- submit ----------------------------------------------------------
+
+    def test_instructor_cannot_submit_for_a_section_they_dont_teach(self):
+        from cis.models.settings import Setting
+        from .models import DropWDRequest
+        from .settings.drop_wd_email import drop_wd_email
+
+        setting, _ = Setting.objects.get_or_create(
+            key=drop_wd_email.key, defaults={'value': {}})
+        setting.value = {**(setting.value or {}), 'start_new_request': ['instructor']}
+        setting.save()
+
+        registration = self.b['registration']
+        DropWDRequest.objects.filter(registration=registration).delete()
+
+        self.client.force_login(self.a['teacher'])
+        response = self.client.post(reverse('instructor_drop_wd:submit_request'), {
+            'term': str(self.term.id),
+            'class_section': str(registration.class_section.id),
+            'registration': str(registration.id),
+            'note': 'please drop',
+        })
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(DropWDRequest.objects.filter(registration=registration).exists())
+
+
+class RoleSignatureScopingTests(_ScopingFixture):
+    """The signature written is decided by the acting role's *own* scope, not
+    the union of every role the user holds (#12, #13, #14).
+
+    `dual` teaches a section at school a and is also an HS admin there. A
+    colleague (`a['teacher']`) teaches another section at school a. As HS admin
+    `dual` may countersign the colleague's request; as instructor they may not.
+    The acting role comes from the portal URL the request came through.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth.models import Group
+        from cis.models.highschool_administrator import (
+            HSAdministrator, HSAdministratorPosition, HSPosition)
+        from cis.models.section import StudentRegistration
+        from cis.models.settings import Setting
+        from cis.models.student import Student
+        from cis.models.teacher import Teacher
+        from .models import DropWDRequest
+        from .settings.drop_wd_email import drop_wd_email
+
+        setting, _ = Setting.objects.get_or_create(
+            key=drop_wd_email.key, defaults={'value': {}})
+        setting.value = {
+            **(setting.value or {}),
+            'signatures_required_from': ['instructor', 'highschool_admin', 'student'],
+        }
+        setting.save()
+
+        self.dual = self._user('dual', 'instructor')
+        self.dual.groups.add(Group.objects.get(name='highschool_admin'))
+        HSAdministratorPosition.objects.create(
+            hsadmin=HSAdministrator.objects.create(user=self.dual),
+            highschool=self.a['hs'],
+            position=HSPosition.objects.create(name='Dual Counselor'),
+            status='Active')
+
+        own_section = _make_section(
+            course=self.course, term=self.term, highschool=self.a['hs'],
+            teacher=Teacher.objects.create(user=self.dual))
+        own_student = self._user('studown', 'student')
+        own_registration = StudentRegistration.objects.create(
+            student=Student.objects.create(user=own_student, highschool=self.a['hs']),
+            class_section=own_section, status='enrolled',
+            status_changed_on={'applied_on': '01/01/2032'})
+        self.own = {
+            'student': own_student, 'registration': own_registration,
+            'request': DropWDRequest.objects.create(registration=own_registration),
+        }
+
+        DropWDRequest.objects.update(
+            instructor_signature='Pending', counselor_signature='Pending',
+            student_signature='Pending', parent_signature='Pending')
+
+    def _review(self, user, namespace, side):
+        self.client.force_login(user)
+        return self.client.post(
+            reverse(f'{namespace}:request', args=[side['request'].id]),
+            {'action': 'review_request', 'review_decision': '1', 'note': ''})
+
+    def _bulk(self, user, namespace, side):
+        self.client.force_login(user)
+        return self.client.post(
+            reverse(f'{namespace}:bulk_actions'),
+            {'action': 'mark_as_approved', 'ids[]': [str(side['request'].id)]})
+
+    def _sign(self, user, namespace, side, signature_type):
+        self.client.force_login(user)
+        return self.client.post(
+            reverse(f'{namespace}:request', args=[side['request'].id]),
+            {'id': str(side['request'].id), 'signature_type': signature_type,
+             'signature': 'forged'})
+
+    # -- #12 review_request ---------------------------------------------
+
+    def test_dual_role_cannot_review_colleagues_section_as_instructor(self):
+        response = self._review(self.dual, 'instructor_drop_wd', self.a)
+        self.assertEqual(response.status_code, 404)
+        request = self._refresh(self.a)
+        self.assertEqual(request.instructor_signature, 'Pending')
+        self.assertEqual(request.counselor_signature, 'Pending')
+
+    def test_dual_role_reviews_colleagues_section_as_counselor(self):
+        response = self._review(self.dual, 'highschool_admin_drop_wd', self.a)
+        self.assertEqual(response.status_code, 200)
+        request = self._refresh(self.a)
+        self.assertEqual(request.counselor_signature, 'Approved')
+        self.assertEqual(request.instructor_signature, 'Pending')
+
+    def test_dual_role_reviews_own_section_as_instructor(self):
+        self._review(self.dual, 'instructor_drop_wd', self.own)
+        request = self._refresh(self.own)
+        self.assertEqual(request.instructor_signature, 'Approved')
+        self.assertEqual(request.counselor_signature, 'Pending')
+
+    def test_review_through_a_portal_the_user_has_no_role_in_is_404(self):
+        # hsadmin is not an instructor: the instructor portal is not theirs.
+        response = self._review(self.hsadmin, 'instructor_drop_wd', self.a)
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(self._refresh(self.a).instructor_signature, 'Pending')
+
+    def test_hsadmin_page_offers_the_counselor_review(self):
+        self.client.force_login(self.hsadmin)
+        response = self.client.get(reverse(
+            'highschool_admin_drop_wd:request', args=[self.a['request'].id]))
+        self.assertTrue(response.context['needs_to_approve'])
+
+    # -- #13 bulk_actions -----------------------------------------------
+
+    def test_dual_role_bulk_as_instructor_skips_colleagues_section(self):
+        response = self._bulk(self.dual, 'instructor_drop_wd', self.a)
+        self.assertEqual(response.json()['updated'], 0)
+        request = self._refresh(self.a)
+        self.assertEqual(request.instructor_signature, 'Pending')
+        self.assertEqual(request.counselor_signature, 'Pending')
+
+    def test_dual_role_bulk_as_counselor_signs_counselor_only(self):
+        response = self._bulk(self.dual, 'highschool_admin_drop_wd', self.a)
+        self.assertEqual(response.json()['updated'], 1)
+        request = self._refresh(self.a)
+        self.assertEqual(request.counselor_signature, 'Approved')
+        self.assertEqual(request.instructor_signature, 'Pending')
+
+    def test_student_bulk_approves_own_request_via_student_portal(self):
+        self._bulk(self.a['student'], 'student_drop_wd', self.a)
+        self.assertEqual(self._refresh(self.a).student_signature, 'Approved')
+
+    def test_bulk_through_a_portal_the_user_has_no_role_in_is_refused(self):
+        response = self._bulk(self.a['student'], 'instructor_drop_wd', self.a)
+        self.assertEqual(response.status_code, 403)
+        request = self._refresh(self.a)
+        self.assertEqual(request.instructor_signature, 'Pending')
+        self.assertEqual(request.student_signature, 'Pending')
+
+    # -- #14 student / parent signatures ---------------------------------
+
+    def test_instructor_and_hsadmin_cannot_write_student_or_parent_signature(self):
+        for user, namespace in [(self.a['teacher'], 'instructor_drop_wd'),
+                                (self.hsadmin, 'highschool_admin_drop_wd')]:
+            for signature_type in ('student', 'parent'):
+                with self.subTest(user=user.email, signature_type=signature_type):
+                    self._sign(user, namespace, self.a, signature_type)
+                    request = self._refresh(self.a)
+                    self.assertEqual(request.student_signature, 'Pending')
+                    self.assertEqual(request.parent_signature, 'Pending')
+
+    def test_student_signs_own_request(self):
+        self._sign(self.a['student'], 'student_drop_wd', self.a, 'parent')
+        self.assertEqual(self._refresh(self.a).parent_signature, 'forged')
+
+    # -- feed follows the page's portal ----------------------------------
+
+    def test_requests_feed_scoped_to_portal(self):
+        url = reverse('instructor_drop_wd:instructor_drop_wd_requests-list')
+        self.client.force_login(self.dual)
+        cases = [
+            ('instructor', {self.own['request'].id}),
+            ('highschool_admin', {self.own['request'].id, self.a['request'].id}),
+        ]
+        for portal, expected in cases:
+            with self.subTest(portal=portal):
+                data = self.client.get(url, {'format': 'json', 'portal': portal}).json()
+                rows = data['results'] if isinstance(data, dict) else data
+                self.assertEqual({r['id'] for r in rows}, {str(i) for i in expected})
+
+    # -- submitting does not auto-sign outside the role's scope ----------
+
+    def test_dual_role_submitting_for_colleagues_section_not_instructor_signed(self):
+        from cis.models.settings import Setting
+        from .models import DropWDRequest
+        from .settings.drop_wd_email import drop_wd_email
+
+        setting = Setting.objects.get(key=drop_wd_email.key)
+        setting.value = {**setting.value, 'start_new_request': ['highschool_admin']}
+        setting.save()
+
+        registration = self.a['registration']
+        DropWDRequest.objects.filter(registration=registration).delete()
+
+        self.client.force_login(self.dual)
+        response = self.client.post(reverse('instructor_drop_wd:submit_request'), {
+            'term': str(self.term.id),
+            'class_section': str(registration.class_section.id),
+            'registration': str(registration.id),
+            'note': 'please drop',
+        })
+        self.assertEqual(response.status_code, 200, response.content)
+        request = DropWDRequest.objects.get(registration=registration)
+        self.assertEqual(request.counselor_signature, 'Approved')
+        self.assertEqual(request.instructor_signature, 'Pending')
+
+    def test_requests_page_follows_portal(self):
+        self.client.force_login(self.dual)
+        cases = [
+            ('instructor_drop_wd', 'drop_wd/instructor/requests.html', 'instructor'),
+            ('highschool_admin_drop_wd', 'drop_wd/highschool_admin/requests.html',
+             'highschool_admin'),
+        ]
+        for namespace, template, portal in cases:
+            with self.subTest(namespace=namespace):
+                response = self.client.get(reverse(f'{namespace}:requests'))
+                self.assertEqual(response.status_code, 200)
+                self.assertTemplateUsed(response, template)
+                self.assertEqual(response.context['bulk_actions_url'],
+                                 reverse(f'{namespace}:bulk_actions'))
+                self.assertIn(f'portal={portal}', response.context['api_url'])
+        self.assertEqual(
+            self.client.get(reverse('student_drop_wd:requests')).status_code, 404)

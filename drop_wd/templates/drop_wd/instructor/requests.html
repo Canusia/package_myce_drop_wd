@@ -113,13 +113,20 @@
                         })
 
                         // $(dt).block()
-                        url = "{%url 'instructor_drop_wd:bulk_actions' %}"
+                        // Each portal posts to its own bulk_actions: the portal
+                        // decides which signature is written.
+                        url = "{% if bulk_actions_url %}{{ bulk_actions_url }}{% else %}{% url 'instructor_drop_wd:bulk_actions' %}{% endif %}"
                         let modal = "modal-bulk_actions"
 
                         $.ajax({
-                            type: "GET",
+                            type: "POST",
                             url: url,
                             data: data,
+                            headers: {'X-CSRFToken': '{{ csrf_token }}'},
+                            error: function(xhr) {
+                                let message = (xhr.responseJSON && xhr.responseJSON.message) || 'Unable to complete the request.'
+                                swal('Error', message, 'error')
+                            },
                             success: function(response) {
                                 if(response.status == 'success') {
                                     swal({
@@ -132,6 +139,9 @@
                                         }
                                     )
 
+                                } else if (response.status == 'error') {
+                                    swal('Not updated', response.message, 'error')
+                                        .then(() => table_records_all_drop_requests.ajax.reload());
                                 } else {
                                     $("#bulk_modal_content").html(response);
                                     $("#" + modal).modal('show');

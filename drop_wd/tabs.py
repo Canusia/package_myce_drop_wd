@@ -34,6 +34,7 @@ if _registry is not None:
         return {
             'class_section': class_section,
             'drop_api_url': reverse(
-                'instructor_drop_wd:instructor_drop_wd_requests-list') + '?format=datatables',
+                'instructor_drop_wd:instructor_drop_wd_requests-list')
+                + '?format=datatables&portal=instructor',
             'submit_new_drop_request_form': DropWDRequestForm(class_section=class_section),
         }

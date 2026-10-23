@@ -20,6 +20,54 @@ incremental install silently keep the old code.
   checked with `importlib.util.find_spec`, so a real import error inside a multi-campus
   `cis` still surfaces. The campus picker tests skip without it.
 
+### Security
+- **Every drop/withdraw view and feed stays inside the caller's scope** (#8, #9, #10).
+  New `drop_wd/scoping.py` defines it — `registrations_for(user, role=…)` /
+  `requests_for(user, role=…)`: CE staff everything, instructors the sections they
+  teach, HS admins students at their schools, students their own. Before this the
+  request id alone was the key:
+  - `submit_request` built the registration choice from the posted id, so an
+    instructor or HS admin could file against any registration. It now returns 403
+    outside the scope of a role that may submit.
+  - The HS admin request page compared a HighSchool id against a HighSchool queryset,
+    which never matched, so any HS admin could open and sign any school's request. It
+    now 404s outside the admin's schools.
+  - `bulk_actions` (`mark_as_approved`) updated any ids posted. It is now POST-only
+    with CSRF, touches only in-scope rows, and reports `updated` / `skipped` counts.
+  - `delete_record` and `send_processed_email` had no role check (a student could
+    delete a request); both are CE-only and POST-only. The request page's
+    `update_drop_wd_request` action (edits the registration) is CE-only.
+- **The signature written is decided by the acting role's own scope, not the union of
+  the user's roles** (#12, #13, #14). The acting role comes from the portal URL the
+  request came through (`ce_drop_wd`, `instructor_drop_wd`, `highschool_admin_drop_wd`,
+  `student_drop_wd`); a portal whose role the user doesn't hold 404s / 403s. So a
+  teacher who is also an HS admin:
+  - may review or bulk-approve as *instructor* only on sections they teach, and as
+    *counselor* only for students at their schools;
+  - is no longer auto-approved as instructor when submitting a request for a
+    colleague's section (the submit-time pre-approval in `signals.py` is now scoped
+    the same way).
+  Student and parent signatures (`DropWDSignatureForm`) are accepted only from the
+  student on their own request; instructors and HS admins can no longer overwrite
+  them. `review_request` is accepted only when that role's approval is pending.
+- Access tests cover each role against each view, plus the two-role (instructor + HS
+  admin) and colleague's-section cases.
+
+### Changed
+- The requests page is chosen by portal, not by the first role the user holds: a
+  teacher who is also an HS admin gets the HS admin page under `/highschool_admin/`.
+  The page's feed URL carries `&portal=<role>` so its rows match what that portal's
+  detail page and bulk action accept; each portal's bulk button posts to its own
+  `<portal>_drop_wd:bulk_actions` (new on the student portal).
+- The HS admin request page offers the review when the *counselor* approval is
+  pending (it checked the student approval).
+- `RequestReviewForm.save()` takes `role=`; without it, it keeps the old
+  first-matching-role guess for outside callers.
+
+**Templates:** tenant overrides of `drop_wd/instructor/requests.html` must POST
+`bulk_actions` with the CSRF token (GET now returns 405), and overrides of
+`drop_wd/ce/request.html` must POST `delete_record`.
+
 ## v2026.2.7 — 2026-10-18
 
 ### Changed

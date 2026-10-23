@@ -72,38 +72,37 @@ def create_new_request(sender, instance, created, **kwargs):
                 request = current_request()
                 user = request.user
 
-                from cis.utils import user_has_instructor_role, user_has_student_role, user_has_highschool_admin_role
+                # A submitter's own signature is pre-approved only where they
+                # could have given it: as instructor on a section they teach,
+                # as counselor for a student at their schools, as the student
+                # on their own registration. Not the union of their roles, or a
+                # teacher who is also an HS admin would sign as instructor for
+                # a colleague's section (#12).
+                from .scoping import (
+                    INSTRUCTOR, HIGHSCHOOL_ADMIN, STUDENT,
+                    registration_in_role_scope,
+                )
+
+                def own_signature(role):
+                    if registration_in_role_scope(user, role, instance.registration):
+                        return 'Approved'
+                    return 'Pending'
 
                 if DropWDRequest.needs_instructor_approval():
-                    if user_has_instructor_role(request.user):
-                        signature_status = 'Approved'
-                    else:
-                        signature_status = 'Pending'
-
                     DropWDRequest.objects.filter(
                         id=instance.id
-                    ).update(instructor_signature=signature_status)
-                    
+                    ).update(instructor_signature=own_signature(INSTRUCTOR))
+
                 if DropWDRequest.needs_student_approval():
-                    if user_has_student_role(request.user):
-                        signature_status = 'Approved'
-                    else:
-                        signature_status = 'Pending'
-
                     DropWDRequest.objects.filter(
                         id=instance.id
-                    ).update(student_signature=signature_status)
-                    
+                    ).update(student_signature=own_signature(STUDENT))
+
                 if DropWDRequest.needs_administrator_approval():
-                    if user_has_highschool_admin_role(request.user):
-                        signature_status = 'Approved'
-                    else:
-                        signature_status = 'Pending'
-
                     DropWDRequest.objects.filter(
                         id=instance.id
-                    ).update(counselor_signature=signature_status)
-                    
+                    ).update(counselor_signature=own_signature(HIGHSCHOOL_ADMIN))
+
             else:
                 user = None
             

@@ -228,8 +228,23 @@ class RequestReviewForm(forms.Form):
                 field.label = mark_safe(field_attr.get('label', ''))
                 field.help_text = mark_safe(field_attr.get('help_text', ''))
 
-    def save(self, request, record):
+    def save(self, request, record, role=None):
+        """Record the decision as ``role``'s signature.
+
+        Views pass the acting role (from the portal the review came through),
+        already checked against that role's own scope (#12). ``role=None``
+        keeps the old first-matching-role guess for callers outside this
+        package.
+        """
         data = self.cleaned_data
+
+        if role is None:
+            if user_has_instructor_role(request.user):
+                role = 'instructor'
+            elif user_has_highschool_admin_role(request.user):
+                role = 'highschool_admin'
+            elif user_has_student_role(request.user):
+                role = 'student'
 
         if data.get('review_decision') == '1':
             status = 'Approved'
@@ -241,17 +256,17 @@ class RequestReviewForm(forms.Form):
 
         note_text = data.get('note', '')
 
-        if user_has_instructor_role(request.user):
+        if role == 'instructor':
             record.instructor_signature = status
             record.notes['instructor_note'] = note_text
             note_type = 'instructor_note'
 
-        elif user_has_highschool_admin_role(request.user):
+        elif role == 'highschool_admin':
             record.counselor_signature = status
             record.notes['counselor_note'] = note_text
             note_type = 'counselor_note'
 
-        elif user_has_student_role(request.user):
+        elif role == 'student':
             record.student_signature = status
             record.notes['student_note'] = note_text
             note_type = 'student_note'

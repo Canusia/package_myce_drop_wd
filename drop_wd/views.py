@@ -1,10 +1,13 @@
 import logging
+import uuid
 
 from django.contrib import messages
 from django.db.models import Count
 from django.http import JsonResponse, Http404
 from django.shortcuts import render, get_object_or_404
+from django.urls import NoReverseMatch, reverse
 from django.views.decorators.clickjacking import xframe_options_exempt
+from django.views.decorators.http import require_POST
 
 from rest_framework import viewsets
 
@@ -40,6 +43,13 @@ from .serializers import (
     DropdownRegistrationSerializer
 )
 from .settings.drop_wd_email import drop_wd_email as drop_wd_settings
+from .scoping import (
+    CE, INSTRUCTOR, HIGHSCHOOL_ADMIN, STUDENT, ROLES, SIGNATURE_FIELDS,
+    acting_role,
+    registrations_for,
+    requests_for,
+    user_has_role,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -164,28 +174,15 @@ class DropWDRequestViewSet(viewsets.ReadOnlyModelViewSet):
         teacher_id = self.request.GET.get('teacher_id', '').strip()
         course_id = self.request.GET.get('course_id', '').strip()
 
-        if user_has_instructor_role(user):
-            records = DropWDRequest.objects.filter(
-                registration__class_section__teacher__user=user
-            )
-        elif user_has_student_role(user):
-            records = DropWDRequest.objects.filter(
-                registration__student__user=user
-            )
-        
-        if user_has_highschool_admin_role(user):
-            try:
-                hsadmin = HSAdministrator.objects.get(user__id=user.id)
-                highschools = hsadmin.get_highschools()
-
-                records = DropWDRequest.objects.filter(
-                    registration__student__highschool__id__in=highschools.values_list('id', flat=True)
-                )
-            except:
-                ...
-        
-        if user_has_cis_role(user):
-            records = DropWDRequest.objects.all()
+        # Every portal reads this one feed (/instructor/drop_wd/api/requests/).
+        # `portal` names the page asking, so its rows match what that portal's
+        # detail page and bulk action will accept; without it, the union of
+        # the user's roles.
+        portal = self.request.GET.get('portal', '').strip()
+        if portal in ROLES:
+            records = requests_for(user, role=portal)
+        else:
+            records = requests_for(user)
 
         try:
             if student_id:
@@ -232,6 +229,17 @@ class DropWDRequestViewSet(viewsets.ReadOnlyModelViewSet):
 
         return records
 
+def _submitting_roles(user):
+    """Roles the user holds that may currently start a request."""
+    allowed = {
+        CE: True,
+        INSTRUCTOR: DropWDRequest.can_instructor_submit_request(),
+        HIGHSCHOOL_ADMIN: DropWDRequest.can_administrator_submit_request(),
+        STUDENT: DropWDRequest.can_student_submit_request(),
+    }
+    return [role for role in ROLES if allowed[role] and user_has_role(user, role)]
+
+
 def submit_request(request):
     """
     Called when a new request is started. Could be initiated by teacher, counselor, or student
@@ -255,6 +263,18 @@ def submit_request(request):
             form = StudentDropWDRequestForm(student=request.user.student, data=request.POST)
         else:
             form = DropWDRequestForm(data=request.POST)
+
+        if form.is_valid() and not registrations_for(
+                request.user, roles=_submitting_roles(request.user)).filter(
+                pk=form.cleaned_data['registration'].pk).exists():
+            # The form's registration queryset is built from the posted id,
+            # so it accepts any registration; only file for one inside the
+            # scope of a role that may submit (#8).
+            return JsonResponse({
+                'title': 'Not allowed',
+                'message': 'You are not allowed to submit a request for this registration.',
+                'status': 'error'
+            }, status=403)
 
         if form.is_valid():
             try:
@@ -290,83 +310,86 @@ def submit_request(request):
         }
     )
 
+@require_POST
 def do_bulk_action(request):
+    """Bulk approve, as the portal the request was posted through (#10, #13).
 
-    action = request.GET.get('action')
-    ids = request.GET.getlist('ids[]')
-    
-    if action == 'mark_as_approved':
-        if user_has_instructor_role(request.user):
-            reqs = DropWDRequest.objects.filter(
-                id__in=ids,
-            )
+    Writes only that role's signature, and only on rows in that role's own
+    scope -- not the union of every role the user holds. Ids outside it are
+    skipped and counted.
+    """
+    action = request.POST.get('action')
+    ids = request.POST.getlist('ids[]')
 
-            reqs.update(
-                instructor_signature='Approved'
-            )
-            return JsonResponse({
-                'message': 'Successfully marked as approved',
-                'status': 'success'
-            })
-        
-        elif user_has_highschool_admin_role(request.user):
-            reqs = DropWDRequest.objects.filter(
-                id__in=ids,
-            )
+    if action != 'mark_as_approved':
+        return JsonResponse({
+            'message': 'Unknown action.',
+            'status': 'error'
+        }, status=400)
 
-            reqs.update(
-                counselor_signature='Approved'
-            )
-            return JsonResponse({
-                'message': 'Successfully marked as approved',
-                'status': 'success'
-            })
-        
-        elif user_has_student_role(request.user):
-            reqs = DropWDRequest.objects.filter(
-                id__in=ids,
-            )
+    role = acting_role(request)
+    field = SIGNATURE_FIELDS.get(role)
+    if field is None:
+        return JsonResponse({
+            'message': 'You are not allowed to approve requests here.',
+            'status': 'error'
+        }, status=403)
 
-            reqs.update(
-                student_signature='Approved'
-            )
-            return JsonResponse({
-                'message': 'Successfully marked as approved',
-                'status': 'success'
-            })
+    valid_ids = set()
+    for value in ids:
+        try:
+            valid_ids.add(uuid.UUID(str(value)))
+        except ValueError:
+            pass
+
+    updated = requests_for(request.user, role=role).filter(
+        id__in=valid_ids
+    ).update(**{field: 'Approved'})
+    skipped = len(set(ids)) - updated
+
+    message = f'Successfully marked {updated} request(s) as approved.'
+    if skipped:
+        message += f' {skipped} request(s) were skipped because you cannot approve them.'
+
+    return JsonResponse({
+        'message': message,
+        'status': 'success' if updated else 'error',
+        'updated': updated,
+        'skipped': skipped,
+    })
 
 @xframe_options_exempt
 def drop_request(request, record_id):
 
-    record = get_object_or_404(DropWDRequest, pk=record_id)
+    # The portal the page is served from decides the role, and the record
+    # must be inside that role's own scope -- not the union of the user's
+    # roles, or a teacher who is also an HS admin could sign as instructor for
+    # a colleague's section (#12). 404 rather than 403, so ids can't be probed.
+    role = acting_role(request)
+    if role is None:
+        raise Http404
+    record = get_object_or_404(requests_for(request.user, role=role), pk=record_id)
     needs_to_approve = False
 
-    if user_has_cis_role(request.user):
+    if role == CE:
         template = 'drop_wd/ce/request.html'
-        
-    elif user_has_instructor_role(request.user):
-        template = 'drop_wd/instructor/request.html'
-        if record.registration.class_section.teacher.user != request.user:
-            raise Http404
 
+    elif role == INSTRUCTOR:
+        template = 'drop_wd/instructor/request.html'
         needs_to_approve = record.record_needs_instructor_approval()
 
-    elif user_has_highschool_admin_role(request.user):
+    elif role == HIGHSCHOOL_ADMIN:
         template = 'drop_wd/highschool_admin/request.html'
-        user = HSAdministrator.objects.get(user__id=request.user.id)
-        highschools = user.get_highschools()
+        # The HS admin signs as counselor, so it is the counselor approval
+        # that is pending (was record_needs_student_approval).
+        needs_to_approve = record.record_needs_administrator_approval()
 
-        if record.registration.student.highschool.id in highschools:
-            raise Http404
-
-        needs_to_approve = record.record_needs_student_approval()
-
-    elif user_has_student_role(request.user):
+    else:
         template = 'drop_wd/student/request.html'
-        if record.registration.student.user != request.user:
-            raise Http404
-
         needs_to_approve = record.record_needs_student_approval()
+
+    # Student and parent signatures come from the student only (#14).
+    can_sign_as_student = record.registration.student.user_id == request.user.id
 
     edit_request_form = EditDropWDRequestForm(
         record
@@ -377,8 +400,16 @@ def drop_request(request, record_id):
     if request.method == 'POST':
         if request.POST.get('action') == 'review_request':
             review_req_form = RequestReviewForm(request.POST)
-            if review_req_form.is_valid():
-                record = review_req_form.save(request, record)
+            if not needs_to_approve:
+                # Only the role whose approval is pending, on its own page.
+                messages.add_message(
+                    request,
+                    messages.SUCCESS,
+                    'Your review is not needed on this request.',
+                    'list-group-item-danger'
+                )
+            elif review_req_form.is_valid():
+                record = review_req_form.save(request, record, role=role)
                 messages.add_message(
                     request,
                     messages.SUCCESS,
@@ -393,6 +424,9 @@ def drop_request(request, record_id):
                     'list-group-item-danger'
                 )
         elif request.POST.get('action') == 'update_drop_wd_request':
+            # Edits the registration itself; only the CE page renders it.
+            if role != CE:
+                raise Http404
             edit_request_form = EditDropWDRequestForm(record, request.POST)
             if edit_request_form.is_valid():
                 edit_request_form.save(request, record)
@@ -413,7 +447,15 @@ def drop_request(request, record_id):
         else:
             form = DropWDSignatureForm(request.POST)
 
-            if form.is_valid():
+            if not can_sign_as_student or \
+                    request.POST.get('signature_type') not in ('student', 'parent'):
+                messages.add_message(
+                    request,
+                    messages.SUCCESS,
+                    'You are not allowed to sign this request.',
+                    'list-group-item-danger'
+                )
+            elif form.is_valid():
                 signature = form.save(request, record)
                 messages.add_message(
                     request,
@@ -445,13 +487,17 @@ def drop_request(request, record_id):
                 }),
             'review_request_form': review_req_form,
             'needs_to_approve': needs_to_approve,
+            'can_sign_as_student': can_sign_as_student,
             'record': record,
             'edit_request_form': edit_request_form,
             'student': record.registration.student,
             'registration': record.registration
         })
 
+@require_POST
 def send_processed_email(request, record_id):
+    if not user_has_cis_role(request.user):
+        raise Http404
     record = get_object_or_404(DropWDRequest, pk=record_id)
     try:
         private_note = request.POST.get('private_note', '').strip()
@@ -479,7 +525,10 @@ def send_processed_email(request, record_id):
             'message': 'Unable to send email. ' + str(e)
         }, status=400)
 
+@require_POST
 def delete_record(request, record_id):
+    if not user_has_cis_role(request.user):
+        raise Http404
     record = get_object_or_404(DropWDRequest, pk=record_id)
     
     try:
@@ -511,7 +560,11 @@ def requests(request):
 
     can_submit_new_request = needs_to_approve = False
     url_prefix = ''
-    if user_has_cis_role(request.user):
+    # The portal the page is served from, not the first role the user holds:
+    # a teacher who is also an HS admin gets the HS admin page under
+    # /highschool_admin/.
+    role = acting_role(request)
+    if role == CE:
         menu = draw_menu(cis_menu, 'students', 'drop_wd_requests', 'ce')
         template = 'drop_wd/ce/requests.html'
 
@@ -519,7 +572,7 @@ def requests(request):
         can_submit_new_request = True
         url_prefix = 'ce'
 
-    elif user_has_instructor_role(request.user):
+    elif role == INSTRUCTOR:
         menu = draw_menu(INSTRUCTOR_MENU, 'drop_wd_requests', 'drop_wd_requests', 'instructor')
         template = 'drop_wd/instructor/requests.html'
 
@@ -531,7 +584,7 @@ def requests(request):
         needs_to_approve = DropWDRequest.needs_instructor_approval()
         url_prefix = 'instructor'
 
-    elif user_has_highschool_admin_role(request.user):
+    elif role == HIGHSCHOOL_ADMIN:
         menu = draw_menu(HS_ADMIN_MENU, 'drop_wd_requests', 'drop_wd_requests', 'highschool_admin')
         template = 'drop_wd/highschool_admin/requests.html'
 
@@ -543,7 +596,7 @@ def requests(request):
         needs_to_approve = DropWDRequest.needs_administrator_approval()
         url_prefix = 'highschool_admin'
 
-    elif user_has_student_role(request.user):
+    elif role == STUDENT:
         menu = draw_menu(STUDENT_MENU, 'drop_wd_requests', 'drop_wd_requests', 'student')
         template = 'drop_wd/student/requests.html'
     
@@ -553,8 +606,17 @@ def requests(request):
         needs_to_approve = DropWDRequest.needs_student_approval()
         url_prefix = 'student'
 
-    # this is hard-coded (unchanged here — the endpoint stays the instructor one)
-    api_url = '/instructor/drop_wd/api/requests/?format=datatables'
+    else:
+        raise Http404
+
+    # this is hard-coded (unchanged here — the endpoint stays the instructor one);
+    # `portal` scopes the rows to this page's role.
+    api_url = f'/instructor/drop_wd/api/requests/?format=datatables&portal={role}'
+
+    try:
+        bulk_actions_url = reverse(f'{url_prefix}_drop_wd:bulk_actions')
+    except NoReverseMatch:
+        bulk_actions_url = ''
 
     from .services import get_requests_table_config
     requests_table_config = get_requests_table_config().build_config(
@@ -576,6 +638,7 @@ def requests(request):
             'needs_to_approve': needs_to_approve,
             'url_prefix': url_prefix,
             'api_url': api_url,
+            'bulk_actions_url': bulk_actions_url,
             'intro': intro,
             'submit_new_drop_request_form': form,
             'terms': Term.objects.all().order_by('-code'),
