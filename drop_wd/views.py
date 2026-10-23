@@ -3,6 +3,7 @@ import uuid
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Count, Q
 from django.http import JsonResponse, Http404
 from django.shortcuts import render, get_object_or_404
@@ -325,10 +326,11 @@ def do_bulk_action(request):
     pending = requests_for(request.user, role=role).filter(
         id__in=valid_ids, **{field: 'Pending'})
     updated = 0
-    for record in pending:
-        setattr(record, field, 'Approved')
-        record.save(update_fields=[field])
-        updated += 1
+    with transaction.atomic():
+        for record in pending:
+            setattr(record, field, 'Approved')
+            record.save(update_fields=[field])
+            updated += 1
     skipped = len(set(ids)) - updated
 
     message = f'Successfully marked {updated} request(s) as approved.'

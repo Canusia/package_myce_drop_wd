@@ -61,8 +61,10 @@ SIGNATURE_FIELDS = {
 
 
 def user_has_role(user, role):
-    """Cached on the user object: a single page asks the same question many
-    times, and each cis check is a groups query."""
+    """Cached on the user object (for request.user, its lazy wrapper, shared
+    by the whole request): a page asks the same question many times, and
+    each cis check is a groups query. Never cleared -- a test that changes a
+    user's groups after asking must use a fresh user instance."""
     check = ROLE_CHECKS.get(role)
     if check is None:
         return False

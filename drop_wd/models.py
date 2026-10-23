@@ -1,3 +1,4 @@
+import logging
 import uuid
 from django.db import models
 from django.db.models import JSONField
@@ -16,6 +17,8 @@ from simple_history.models import HistoricalRecords
 
 from cis.models.section import StudentRegistration
 from cis.utils import model_as_HTML
+
+logger = logging.getLogger(__name__)
 
 def _history_user(request=None, **kwargs):
     """Who made a history row: simple_history's HistoryRequestMiddleware
@@ -355,6 +358,11 @@ class DropWDRequest(models.Model):
 
         # notify ce staff
         to = parse_addresses(email_settings.get('email_address_to_cep'))
+        if not to:
+            # Migration 0006 can leave this blank on a tenant that never
+            # replaced the seeded address. Say so rather than drop it silently.
+            logger.warning(
+                'Drop/WD received email not sent to the CE office: To CE Office is empty.')
 
         email_template = Template(email_settings['email_to_cep'])
         subject = email_settings.get('email_subject_to_cep')

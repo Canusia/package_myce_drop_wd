@@ -13,6 +13,10 @@ incremental install silently keep the old code.
 ### Upgrade
 - Run `migrate` (`0005` adds the history table; `0006` removes the seeded personal
   CE-office address from saved settings) and `register_reports`.
+- Check **To CE Office**: `0006` empties it on a tenant that never replaced the seeded
+  address, and the CE office then gets no new-request email (a warning is logged).
+- Review **Who should be notified** before upgrading: parents and instructors ticked
+  there now actually receive the "received" email (a bug kept it from ever sending).
 - Fill in **Debug Email List** before using Debug mode. A setting already saved in
   Debug with no list now sends nothing (a warning is logged), where it used to reach a
   hard-coded personal address.

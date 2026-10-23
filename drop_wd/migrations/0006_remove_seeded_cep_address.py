@@ -27,7 +27,9 @@ def remove_seeded_address(apps, schema_editor):
             a.strip() for a in stored.replace(';', ',').replace('\n', ',').split(',')
             if a.strip() and a.strip().lower() != SEEDED_ADDRESS
         ]
-        value['email_address_to_cep'] = ', '.join(addresses)
+        # No space after the comma: the settings form's validate_email_list
+        # splits on ',' without stripping, and would refuse the next save.
+        value['email_address_to_cep'] = ','.join(addresses)
         setting.value = value
         setting.save(update_fields=['value'])
 

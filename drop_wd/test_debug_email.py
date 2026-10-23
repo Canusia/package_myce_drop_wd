@@ -217,8 +217,11 @@ class RemoveSeededAddressMigrationTests(TestCase):
 
     def test_tenant_addresses_kept(self):
         value = self._run('ce@school.edu; Kadaji@gmail.com, dean@school.edu')
-        self.assertEqual(value['email_address_to_cep'], 'ce@school.edu, dean@school.edu')
+        self.assertEqual(value['email_address_to_cep'], 'ce@school.edu,dean@school.edu')
         self.assertEqual(value['is_active'], 'Yes')
+        # What's left must pass the settings form's own validator.
+        from .validators import validate_email_list
+        validate_email_list(value['email_address_to_cep'])
 
     def test_untouched_without_it(self):
         self.assertEqual(
