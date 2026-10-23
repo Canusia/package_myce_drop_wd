@@ -7,7 +7,7 @@ DEBUG, or had no DEBUG setting at all.
 from unittest import mock
 
 from django.http import HttpRequest
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from cis.models.settings import Setting
 
@@ -51,6 +51,10 @@ class ResolveRecipientsTests(SimpleTestCase):
             with self.subTest(configs):
                 self.assertEqual(
                     email_service.resolve_recipients(configs, self.to), [])
+
+    def test_debug_with_an_empty_list_logs_why_nothing_was_sent(self):
+        with self.assertLogs(email_service.logger, level='WARNING'):
+            email_service.resolve_recipients({'is_active': 'Debug'}, self.to)
 
     def test_no_sends_nothing(self):
         self.assertEqual(
@@ -191,3 +195,32 @@ class SendPathTests(_ScopingFixture):
         self._configure(is_active='Yes', email_address_to_cep='')
         sent = self._sent_to('send_received_notification')
         self.assertNotIn([], sent)
+
+
+class RemoveSeededAddressMigrationTests(TestCase):
+    """0006 removes the address every pre-#15 install() seeded as the CE
+    office, leaving any address a tenant added itself."""
+
+    def _run(self, stored):
+        import importlib
+        from django.apps import apps
+        migration = importlib.import_module(
+            __package__ + '.migrations.0006_remove_seeded_cep_address')
+        Setting.objects.filter(key__in=migration.KEYS).delete()
+        Setting.objects.create(key=migration.KEYS[0], value={
+            'is_active': 'Yes', 'email_address_to_cep': stored})
+        migration.remove_seeded_address(apps, None)
+        return Setting.objects.get(key=migration.KEYS[0]).value
+
+    def test_seeded_address_removed(self):
+        self.assertEqual(self._run('kadaji@gmail.com')['email_address_to_cep'], '')
+
+    def test_tenant_addresses_kept(self):
+        value = self._run('ce@school.edu; Kadaji@gmail.com, dean@school.edu')
+        self.assertEqual(value['email_address_to_cep'], 'ce@school.edu, dean@school.edu')
+        self.assertEqual(value['is_active'], 'Yes')
+
+    def test_untouched_without_it(self):
+        self.assertEqual(
+            self._run('ce@school.edu;dean@school.edu')['email_address_to_cep'],
+            'ce@school.edu;dean@school.edu')

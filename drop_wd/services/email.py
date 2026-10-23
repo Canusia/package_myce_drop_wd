@@ -7,12 +7,16 @@ Yes is treated as Debug, so a dev or misconfigured server cannot mail real
 students, parents or staff: mail goes to the debug list, or nowhere when the
 list is empty. There is no other fallback address.
 """
+import logging
+
 from django.conf import settings
 from django.core.validators import validate_email
 
 from mailer import send_html_mail
 
 YES, DEBUG, NO = 'Yes', 'Debug', 'No'
+
+logger = logging.getLogger(__name__)
 
 
 def parse_addresses(value):
@@ -49,7 +53,13 @@ def resolve_recipients(configs, to):
     if mode == NO:
         return []
     if mode == DEBUG:
-        return parse_addresses((configs or {}).get('debug_email_list'))
+        recipients = parse_addresses((configs or {}).get('debug_email_list'))
+        if not recipients:
+            # A setting saved in Debug before debug_email_list existed: it used
+            # to reach a hard-coded address and now reaches no one. Say so.
+            logger.warning(
+                'Drop/WD email not sent: Debug mode with an empty Debug Email List.')
+        return recipients
     return [a for a in parse_addresses(to) if not invalid_addresses([a])]
 
 
