@@ -138,6 +138,11 @@ will not ship in the sdist/wheel.
 ### Dev vs Production
 In dev (submodule), the module path is `drop_wd.drop_wd.*`. In production (pip install), it's `drop_wd.*`. The host app (`myce/urls.py`, `myce/settings.py`) handles the difference via `settings.DEBUG`.
 
+### Summaries (`summary.py`)
+`BREAKDOWNS` + `breakdowns(records, keys=…)` feed both the CE Summary tab
+(`ce_drop_wd:requests_summary`) and the `drop_wd_summary` report. Keep them
+aggregate (`values().annotate()`), one query per breakdown.
+
 ### Change history
 `DropWDRequest.history` is `simple_history.HistoricalRecords()` (declared dependency;
 not `MyCEBaseModel`, which most tenants lack). `QuerySet.update()` writes no history.

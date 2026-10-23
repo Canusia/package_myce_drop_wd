@@ -1,5 +1,5 @@
 {% comment %}
-CE Summary tab: term-filtered aggregates of Drop/WD requests.
+CE Summary tab: term / academic-year filtered aggregates of Drop/WD requests.
 
 Data comes from ce_drop_wd:requests_summary as JSON and is rendered
 client-side, so the CSV and PDF buttons export every row rather than one
@@ -19,8 +19,14 @@ page. See staticfiles/drop_wd/js/requests_summary.js.
             <option value="{{ t.id }}">{{ t.label }} {{ t.year }}</option>
             {% endfor %}
           </select>
+          <label class="mr-2 mb-0 ml-3" for="summary_academic_years">Academic Year(s):</label>
+          <select id="summary_academic_years" name="academic_year" class="form-control" multiple size="4">
+            {% for y in academic_years %}
+            <option value="{{ y.id }}">{{ y.name }}</option>
+            {% endfor %}
+          </select>
           <small class="form-text text-muted ml-2">
-            Select none for all terms. Hold Ctrl (Cmd on Mac) to pick several.
+            Select none for all. Hold Ctrl (Cmd on Mac) to pick several.
           </small>
         </form>
       </div>

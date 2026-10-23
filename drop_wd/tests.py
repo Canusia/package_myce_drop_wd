@@ -417,11 +417,99 @@ class RequestsSummaryTests(TestCase):
         data = self._get()
 
         for key, expected in (('term', 'Sum Term A'),
+                              ('academic_year', '2029-2030'),
                               ('highschool', 'Summary HS'),
                               ('course', 'SUM 300')):
             with self.subTest(breakdown=key):
                 names = [r['name'] for r in self._breakdown(data, key)['rows']]
                 self.assertIn(expected, names)
+
+    def _other_year_request(self):
+        from cis.models.term import Term
+        year = _make_academic_year('2030-2031', None)
+        term = Term.objects.create(academic_year=year, code='SY', label='Sum Term Y')
+        section = _make_section(course=self.section_a.course, term=term,
+                                highschool=self.hs)
+        self._request(section, 9, 'requested')
+        return year
+
+    def test_academic_year_breakdown_and_filter(self):
+        year = self._other_year_request()
+
+        rows = self._breakdown(self._get(), 'academic_year')['rows']
+        self.assertEqual({r['name']: r['total'] for r in rows},
+                         {'2029-2030': 3, '2030-2031': 1})
+
+        data = self._get(academic_year=str(year.id))
+        self.assertEqual(data['headline']['total'], 1)
+        self.assertEqual([r['name'] for r in self._breakdown(data, 'term')['rows']],
+                         ['Sum Term Y'])
+
+    def test_malformed_filter_id_returns_an_empty_summary(self):
+        data = self._get(term='not-a-uuid')
+        self.assertEqual(data['headline']['total'], 0)
+
+    def test_breakdowns_are_one_query_each(self):
+        from .models import DropWDRequest
+        from .summary import breakdowns
+        keys = ['term', 'academic_year', 'highschool', 'course']
+        records = DropWDRequest.objects.all()
+        with self.assertNumQueries(len(keys)):
+            tables = breakdowns(records, keys=keys, total=3)
+        self.assertEqual([t['key'] for t in tables], keys)
+
+    # -- Drop/WD Requests Summary report (#6) -------------------------------
+
+    def _report_module(self):
+        from django.apps import apps
+        from importlib import import_module
+        from .models import DropWDRequest
+        app = apps.get_containing_app_config(DropWDRequest.__module__).name
+        # The path report.ReportScheduler.run builds from the REPORTS entry.
+        return import_module(f'{app}.reports.drop_wd_summary')
+
+    def test_summary_report_is_declared_in_the_manifest(self):
+        from django.apps import apps
+        from .models import DropWDRequest
+        config = apps.get_containing_app_config(DropWDRequest.__module__)
+        entry = next(r for r in config.REPORTS if r['name'] == 'drop_wd_summary')
+        self.assertEqual(entry['app'], config.name)
+        self.assertTrue(hasattr(self._report_module(), 'drop_wd_summary'))
+
+    def test_summary_report_writes_the_four_breakdowns(self):
+        from unittest import mock
+        module = self._report_module()
+        task = mock.Mock(id='task-1', created_by=self.user)
+        storage = mock.Mock()
+        storage.return_value.save.side_effect = lambda path, content: path
+        storage.return_value.url.side_effect = lambda path: f'https://files/{path}'
+
+        with mock.patch('cis.backends.storage_backend.PrivateMediaStorage', storage), \
+                mock.patch.object(module, 'build_workbook',
+                                  wraps=module.build_workbook) as build:
+            # dict(request.POST): every value is a list
+            url = module.drop_wd_summary().run(
+                task, {'terms': [str(self.term_a.id)], 'csrfmiddlewaretoken': ['x']})
+
+        self.assertTrue(url.startswith('https://files/reports/task-1/'))
+        self.assertTrue(url.endswith('.xlsx'))
+        tables = build.call_args.args[0]
+        self.assertEqual([t['key'] for t in tables],
+                         ['term', 'academic_year', 'highschool', 'course'])
+        by_key = {t['key']: t['rows'] for t in tables}
+        self.assertEqual([(r['name'], r['total']) for r in by_key['term']],
+                         [('Sum Term A', 2)])
+        content = storage.return_value.save.call_args.args[1].read()
+        self.assertTrue(content.startswith(b'PK'))  # an xlsx (zip) file
+
+    def test_summary_report_scope(self):
+        from cis.models.customuser import CustomUser
+        module = self._report_module()
+        self.assertEqual(module.scoped_requests(self.user).count(), 3)
+        outsider = CustomUser.objects.create_user(
+            email='out-rep@example.com', username='out-rep@example.com', password='pw')
+        self.assertEqual(module.scoped_requests(outsider).count(), 0)
+        self.assertEqual(module.scoped_requests(None).count(), 0)
 
     def test_rows_carry_status_split_and_percentage(self):
         row = next(r for r in self._breakdown(self._get(), 'term')['rows']

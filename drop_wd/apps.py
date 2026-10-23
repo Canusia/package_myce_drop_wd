@@ -28,6 +28,18 @@ class DropWdConfig(AppConfig):
                 'ce'
             ]
         },
+        {
+            'app': 'drop_wd',
+            'name': 'drop_wd_summary',
+            'title': 'Drop/WD Requests Summary',
+            'description': 'Drop/WD request counts by term, academic year, high school and course.',
+            'categories': [
+                'Classes'
+            ],
+            'available_for': [
+                'ce'
+            ]
+        },
     ]
     def ready(self):
         import drop_wd.signals
@@ -55,6 +67,18 @@ class DevDropWdConfig(AppConfig):
             'name': 'drop_wd_requests',
             'title': 'Drop/WD Requests Export',
             'description': '-',
+            'categories': [
+                'Classes'
+            ],
+            'available_for': [
+                'ce'
+            ]
+        },
+        {
+            'app': 'drop_wd.drop_wd',
+            'name': 'drop_wd_summary',
+            'title': 'Drop/WD Requests Summary',
+            'description': 'Drop/WD request counts by term, academic year, high school and course.',
             'categories': [
                 'Classes'
             ],

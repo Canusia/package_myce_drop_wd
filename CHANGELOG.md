@@ -11,6 +11,17 @@ incremental install silently keep the old code.
 ## Unreleased
 
 ### Added
+- **Drop/WD summaries by term, academic year, high school and course** (#6). The CE
+  Summary tab (which already broke requests down by term, high school, course,
+  instructor and status) gains a **Requests by Academic Year** table and an
+  **Academic Year(s)** filter next to Term(s). New report **Drop/WD Requests Summary**
+  (`reports/drop_wd_summary.py`, CE): optional term / academic year / status filters,
+  pick the breakdowns (default: term, academic year, high school, course), and get an
+  `.xlsx` with one sheet per breakdown (total, requested, processed, % of total). The
+  aggregation moved to `drop_wd/summary.py`, shared by the tab and the report; it is
+  one `values().annotate()` query per breakdown. A malformed term id on the summary
+  feed now returns an empty summary instead of a 500. **Upgrade:** run
+  `register_reports` to add the report.
 - **Change history for Drop/WD requests** (#4). `DropWDRequest.history =
   HistoricalRecords()` from `simple_history` directly, not myce's `MyCEBaseModel` — that
   base exists in only a minority of tenants (`myce/models/base.py`) and would add four

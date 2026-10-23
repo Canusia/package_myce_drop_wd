@@ -122,7 +122,7 @@
       Object.keys(tables).forEach(function (k) { tables[k].destroy(); delete tables[k]; });
       data.breakdowns.forEach(function (b) { renderBreakdown($container, b); });
       if (!data.headline.total) {
-        $container.html('<p class="text-muted">No requests match the selected term(s).</p>');
+        $container.html('<p class="text-muted">No requests match the selected filters.</p>');
       }
     }).fail(function () {
       $container.html('<p class="text-danger">Could not load the summary. Please try again.</p>');
