@@ -31,7 +31,7 @@ class DropWdConfig(AppConfig):
     ]
     def ready(self):
         import drop_wd.signals
-        from . import tabs  # noqa: F401  instructor class section tab
+        from . import tabs  # noqa: F401  instructor + HS admin class section tabs
 
 
 class DevDropWdConfig(AppConfig):
@@ -65,4 +65,4 @@ class DevDropWdConfig(AppConfig):
     ]
     def ready(self):
         import drop_wd.drop_wd.signals
-        from . import tabs  # noqa: F401  instructor class section tab    
+        from . import tabs  # noqa: F401  instructor + HS admin class section tabs    

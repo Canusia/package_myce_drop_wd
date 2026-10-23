@@ -1,0 +1,45 @@
+{% comment %}
+Drop Requests tab on the HS admin class-section page, registered by
+drop_wd/tabs.py on highschool_admin's hsadmin_class_section_tabs (#16).
+Context: record (the class section), drop_requests, needs_counselor_approval,
+start_request_url ('' when HS admins may not start a request).
+{% endcomment %}
+<div class="card mb-4 border-top-0">
+    <div class="card-body">
+        {% if start_request_url %}
+        <div class="mb-3 text-right">
+            <a class="btn btn-primary btn-sm" href="{{ start_request_url }}">Start request</a>
+        </div>
+        {% endif %}
+        <div class="table-responsive">
+            <table class="table table-striped" id="hsadmin_class_section_drop_requests">
+                <thead>
+                    <tr>
+                        <th>Submitted On</th>
+                        <th>Student</th>
+                        <th>Submitted By</th>
+                        {% if needs_counselor_approval %}<th>Counselor Approval</th>{% endif %}
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in drop_requests %}
+                    <tr>
+                        <td>{{ r.created_on|date:'m/d/Y' }}</td>
+                        <td>{{ r.registration.student.user.last_name }}, {{ r.registration.student.user.first_name }}</td>
+                        <td>{% if r.created_by %}{{ r.created_by.last_name }}, {{ r.created_by.first_name }}{% else %}-{% endif %}</td>
+                        {% if needs_counselor_approval %}<td>{% if r.has_counselor_signed %}Yes{% else %}Pending{% endif %}</td>{% endif %}
+                        <td>{{ r.get_status_display }}</td>
+                        <td><a href="{% url 'highschool_admin_drop_wd:request' r.id %}">View</a></td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="{% if needs_counselor_approval %}6{% else %}5{% endif %}">None found</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

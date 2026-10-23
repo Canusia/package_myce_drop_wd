@@ -10,6 +10,19 @@ incremental install silently keep the old code.
 
 ## Unreleased
 
+### Added
+- **Drop Requests tab on the HS admin class-section page** (#16). drop_wd registers it
+  on `hsadmin_class_section_tabs` (package-highschool_admin after v0.0.21) from
+  `AppConfig.ready()`; the registry is looked up with `find_spec` under
+  `highschool_admin.highschool_admin.tabs.registry` then `highschool_admin.tabs.registry`,
+  and a tenant with an older portal or none registers nothing. Shown only when
+  **High School Administrator** is ticked in *Who can start new Request* or *Who needs to
+  approve a New Request* (being in *Who should be notified* alone doesn't show it).
+  Server-rendered (`lazy=False`); lists this section's requests for students at the
+  admin's schools (`requests_for(user, role='highschool_admin')`), each linking to
+  `highschool_admin_drop_wd:request`, with **Start request** only when HS admins may
+  start one and some term is allowed.
+
 ### Fixed
 - **Debug mode emails only the new `debug_email_list`, never a personal address** (#15).
   All three send paths (CE-office received, received, processed) used to replace the
