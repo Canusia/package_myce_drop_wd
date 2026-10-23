@@ -18,8 +18,22 @@ from cis.utils import (
     user_has_highschool_admin_role, get_field
 )
 
+import importlib.util
+
 from cis.models.highschool import HighSchool
-from cis.highschool_scope import picker_queryset
+
+# cis.highschool_scope (campus-scoped school picker) ships only with the
+# packaged multi-campus cis (myce_cis >= 0.1.7a, the optional `campus` extra).
+# Tenants that keep cis in their own repo don't have it, so fall back to the
+# pre-v2026.2.5 picker. find_spec rather than try/except ImportError, so a real
+# import error inside a cis that does have the module is not swallowed.
+if importlib.util.find_spec('cis.highschool_scope'):
+    from cis.highschool_scope import picker_queryset
+else:
+    def picker_queryset(campus=None, keep=None):
+        return HighSchool.objects.filter(
+            status__iexact='active'
+        ).order_by('name')
 from cis.models.term import Term
 from ..models import DropWDRequest
 

@@ -8,6 +8,18 @@ through the `git+https://…@<tag>` line in its `webapp/requirements.txt`. The p
 keys upgrades off the version string, not the tag, so a frozen version makes an
 incremental install silently keep the old code.
 
+## Unreleased
+
+### Fixed
+- **`myce_cis` is optional again, so tenants that keep `cis` in their own repo can
+  upgrade** (#17). v2026.2.5 made `myce_cis>=0.1.7a` a hard dependency and imported
+  `cis.highschool_scope` when the report module loaded; neither exists for an in-repo
+  `cis`. `myce_cis` is now the optional `campus` extra (`myce_drop_wd[campus]`) in both
+  `pyproject.toml` and `setup.cfg`, and the Drop/WD requests report falls back to the
+  pre-v2026.2.5 picker (active schools by name) when `cis.highschool_scope` is absent —
+  checked with `importlib.util.find_spec`, so a real import error inside a multi-campus
+  `cis` still surfaces. The campus picker tests skip without it.
+
 ## v2026.2.7 — 2026-10-18
 
 ### Changed

@@ -13,6 +13,12 @@ readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
     "Django>=3.2",
+]
+
+[project.optional-dependencies]
+# Campus-scoped school picker (cis.highschool_scope). Tenants that keep cis in
+# their own repo install without it and get the plain active-schools picker.
+campus = [
     "myce_cis>=0.1.7a",
 ]
 classifiers = [
