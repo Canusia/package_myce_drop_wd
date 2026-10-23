@@ -11,6 +11,16 @@ incremental install silently keep the old code.
 ## Unreleased
 
 ### Added
+- **Change history for Drop/WD requests** (#4). `DropWDRequest.history =
+  HistoricalRecords()` from `simple_history` directly, not myce's `MyCEBaseModel` — that
+  base exists in only a minority of tenants (`myce/models/base.py`) and would add four
+  columns (`external_sis_id`, `meta`, `created_at`, `updated_at`). `django-simple-history>=3.0`
+  is now a declared dependency (`pyproject.toml`, `setup.cfg`). New migration
+  `0005_historicaldropwdrequest` (cis dependency is `__first__`). The admin uses
+  `SimpleHistoryAdmin` (History button) when the tenant has `simple_history` in
+  `INSTALLED_APPS`, and the plain admin otherwise, since the history templates load
+  only from the installed app. **Upgrade:** run `migrate`. Updates through
+  `QuerySet.update()` (the bulk *Mark as approved* action) write no history rows.
 - **Django admin for Drop/WD requests** (#5). `DropWDRequest` is registered with the
   student, course, section, term, status and the four signatures in the list; filters
   on status, signatures, date and term (only terms that have requests); search on

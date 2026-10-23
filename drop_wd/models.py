@@ -12,6 +12,7 @@ from .settings.drop_wd_email import drop_wd_email
 from .services.email import parse_addresses, send_drop_wd_mail
 
 from model_utils import FieldTracker
+from simple_history.models import HistoricalRecords
 
 from cis.models.section import StudentRegistration
 from cis.utils import model_as_HTML
@@ -102,6 +103,11 @@ class DropWDRequest(models.Model):
         choices=SIGNATURE_STATUS,
         default='Not Needed'
     )
+
+    # Change history (#4). Straight from simple_history rather than myce's
+    # MyCEBaseModel: most tenants have no myce/models/base.py, and that base
+    # would also add four columns this model doesn't need.
+    history = HistoricalRecords()
 
     class Meta:
         unique_together = ['registration']

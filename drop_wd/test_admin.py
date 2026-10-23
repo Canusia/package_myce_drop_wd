@@ -46,3 +46,35 @@ class AdminPagesTests(_ScopingFixture):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'vForeignKeyRawIdAdminField')
         self.assertEqual(self.client.get(self._url('add')).status_code, 200)
+
+
+class HistoryTests(_ScopingFixture):
+    """DropWDRequest keeps a change history (#4)."""
+
+    def test_status_change_is_recorded(self):
+        request = self.a['request']
+        before = request.history.count()
+        request.status = 'processed'
+        request.save()
+        self.assertEqual(request.history.count(), before + 1)
+        self.assertEqual(request.history.first().status, 'processed')
+        self.assertEqual(request.history.first().history_type, '~')
+
+    def test_create_is_recorded(self):
+        self.assertEqual(self.b['request'].history.filter(history_type='+').count(), 1)
+
+    def test_admin_history_page_loads(self):
+        from django.apps import apps
+        from cis.models.customuser import CustomUser
+        if not apps.is_installed('simple_history'):
+            self.skipTest("tenant doesn't install the simple_history app")
+        superuser = CustomUser.objects.create_superuser(
+            email='hist-dropwd@example.com', username='hist-dropwd@example.com',
+            password='pw')
+        self.client.force_login(superuser)
+        meta = DropWDRequest._meta
+        url = reverse(f'admin:{meta.app_label}_{meta.model_name}_history',
+                      args=[self.a['request'].pk])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Created')

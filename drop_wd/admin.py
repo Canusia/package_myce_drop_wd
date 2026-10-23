@@ -1,16 +1,26 @@
-"""Django admin for drop_wd (#5).
+"""Django admin for drop_wd (#5), with change history (#4).
 
 Foreign keys are raw-id inputs: a select over every user or student
 registration would render tens of thousands of options. (autocomplete_fields
 would need search_fields on cis's admins, which not every tenant's cis has.)
 """
+from django.apps import apps
 from django.contrib import admin
 
 from .models import DropWDRequest
 
+# The History button needs simple_history's admin templates, which load only
+# when the tenant lists 'simple_history' in INSTALLED_APPS. Several tenants
+# have the package (DropWDRequest.history needs only that) but not the app,
+# so fall back to the plain admin there rather than 500 on the history page.
+if apps.is_installed('simple_history'):
+    from simple_history.admin import SimpleHistoryAdmin as _BaseAdmin
+else:
+    _BaseAdmin = admin.ModelAdmin
+
 
 @admin.register(DropWDRequest)
-class DropWDRequestAdmin(admin.ModelAdmin):
+class DropWDRequestAdmin(_BaseAdmin):
     list_display = (
         'created_on', 'student', 'course', 'class_number', 'term', 'status',
         'student_signature', 'parent_signature', 'instructor_signature',

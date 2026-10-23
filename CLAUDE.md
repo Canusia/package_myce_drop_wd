@@ -138,6 +138,11 @@ will not ship in the sdist/wheel.
 ### Dev vs Production
 In dev (submodule), the module path is `drop_wd.drop_wd.*`. In production (pip install), it's `drop_wd.*`. The host app (`myce/urls.py`, `myce/settings.py`) handles the difference via `settings.DEBUG`.
 
+### Change history
+`DropWDRequest.history` is `simple_history.HistoricalRecords()` (declared dependency;
+not `MyCEBaseModel`, which most tenants lack). `QuerySet.update()` writes no history.
+`SimpleHistoryAdmin` is used only when `simple_history` is in `INSTALLED_APPS`.
+
 ## URL Namespaces
 - `ce_drop_wd` — CE staff
 - `instructor_drop_wd` — Instructors (also hosts the shared API feeds and `submit_request`)
