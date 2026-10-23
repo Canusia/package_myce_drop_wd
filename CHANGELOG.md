@@ -8,7 +8,18 @@ through the `git+https://…@<tag>` line in its `webapp/requirements.txt`. The p
 keys upgrades off the version string, not the tag, so a frozen version makes an
 incremental install silently keep the old code.
 
-## Unreleased
+## v2026.2.8 — 2026-10-23
+
+### Upgrade
+- Run `migrate` (`0005` adds the history table; `0006` removes the seeded personal
+  CE-office address from saved settings) and `register_reports`.
+- Fill in **Debug Email List** before using Debug mode. A setting already saved in
+  Debug with no list now sends nothing (a warning is logged), where it used to reach a
+  hard-coded personal address.
+- The **New Request** dropdowns and pre-approval follow *Who can start new Request*:
+  a role not ticked there gets empty dropdowns and no auto-signature.
+- `myce_cis` is now optional; tenants with their own in-repo `cis` (older
+  `cis.validators`, no `cis.settings.highschool_admin_portal`) can install this.
 
 ### Added
 - **Drop/WD summaries by term, academic year, high school and course** (#6). The CE
@@ -30,8 +41,10 @@ incremental install silently keep the old code.
   `0005_historicaldropwdrequest` (cis dependency is `__first__`). The admin uses
   `SimpleHistoryAdmin` (History button) when the tenant has `simple_history` in
   `INSTALLED_APPS`, and the plain admin otherwise, since the history templates load
-  only from the installed app. **Upgrade:** run `migrate`. Updates through
-  `QuerySet.update()` (the bulk *Mark as approved* action) write no history rows.
+  only from the installed app. **Upgrade:** run `migrate`. Bulk *Mark as approved* and
+  the submit-time pre-approval save row by row, so they are recorded too. The user on
+  each row comes from simple_history's `HistoryRequestMiddleware` when the tenant
+  loads it, else from cis's request middleware.
 - **Django admin for Drop/WD requests** (#5). `DropWDRequest` is registered with the
   student, course, section, term, status and the four signatures in the list; filters
   on status, signatures, date and term (only terms that have requests); search on
@@ -74,6 +87,19 @@ incremental install silently keep the old code.
   checked with `importlib.util.find_spec`, so a real import error inside a multi-campus
   `cis` still surfaces. The campus picker tests skip without it.
 
+- **Bulk *Mark as approved* no longer overturns earlier decisions.** It changed the
+  role's signature on every selected row, turning a *Not Approved* or *Not Needed* into
+  *Approved*; it now changes only rows still *Pending* for that role.
+- **Parents and instructors on the notification list get the "received" email.** The
+  check was `if validate_email(...)`, which is always falsy, so they never did.
+- **The settings form no longer needs a recent `cis.validators`** (#17).
+  `drop_wd/validators.py` uses cis's `validate_json`, `validate_html_short_code` and
+  `validate_email_list` when present and bundled copies otherwise. The HS admin
+  requests page reads its text through `portal_text('highschool_admin')`, so a cis
+  without `cis.settings.highschool_admin_portal` gets the default text.
+- **A malformed registration id on *Submit* is a 403, not a 500.**
+- `pyproject.toml` named `README.md` as the readme; the file is `README.rst`.
+
 ### Security
 - **Every drop/withdraw view and feed stays inside the caller's scope** (#8, #9, #10).
   New `drop_wd/scoping.py` defines it — `registrations_for(user, role=…)` /
@@ -82,7 +108,12 @@ incremental install silently keep the old code.
   request id alone was the key:
   - `submit_request` built the registration choice from the posted id, so an
     instructor or HS admin could file against any registration. It now returns 403
-    outside the scope of a role that may submit.
+    outside the scope of a role that may submit, checked before the form runs so the
+    reply can't reveal whether a request already exists.
+  - The **New Request** dropdown feeds used the first role the user held. They now
+    use the same scope `submit_request` accepts: the union of the roles that may
+    start a request. An HS admin also sees their students in sections hosted at
+    another school.
   - The HS admin request page compared a HighSchool id against a HighSchool queryset,
     which never matched, so any HS admin could open and sign any school's request. It
     now 404s outside the admin's schools.
@@ -100,7 +131,7 @@ incremental install silently keep the old code.
     *counselor* only for students at their schools;
   - is no longer auto-approved as instructor when submitting a request for a
     colleague's section (the submit-time pre-approval in `signals.py` is now scoped
-    the same way).
+    the same way, and signs only in a role allowed to start a request).
   Student and parent signatures (`DropWDSignatureForm`) are accepted only from the
   student on their own request; instructors and HS admins can no longer overwrite
   them. `review_request` is accepted only when that role's approval is pending.
@@ -117,6 +148,8 @@ incremental install silently keep the old code.
   pending (it checked the student approval).
 - `RequestReviewForm.save()` takes `role=`; without it, it keeps the old
   first-matching-role guess for outside callers.
+- A view reached through some other URLconf (no drop_wd portal namespace) still acts
+  as the user's first role for reads, but gets no role for writes.
 
 **Templates:** tenant overrides of `drop_wd/instructor/requests.html` must POST
 `bulk_actions` with the CSRF token (GET now returns 405), and overrides of

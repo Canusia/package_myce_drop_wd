@@ -145,8 +145,17 @@ aggregate (`values().annotate()`), one query per breakdown.
 
 ### Change history
 `DropWDRequest.history` is `simple_history.HistoricalRecords()` (declared dependency;
-not `MyCEBaseModel`, which most tenants lack). `QuerySet.update()` writes no history.
-`SimpleHistoryAdmin` is used only when `simple_history` is in `INSTALLED_APPS`.
+not `MyCEBaseModel`, which most tenants lack). `QuerySet.update()` writes no history,
+so signature writes (bulk approve, pre-approval) use `save(update_fields=…)`.
+`history_user` falls back to cis's `current_request()` when the tenant lacks
+`HistoryRequestMiddleware`. `SimpleHistoryAdmin` is used only when `simple_history` is
+in `INSTALLED_APPS`.
+
+### Older tenant `cis` copies
+Tenants with their own in-repo `cis` lack parts of it. Settings validators come from
+`drop_wd/validators.py` (cis's when present, bundled otherwise); portal page text goes
+through `portal_text(role)`. Don't add a bare `from cis.<new module> import …` without
+the same kind of fallback.
 
 ## URL Namespaces
 - `ce_drop_wd` — CE staff
@@ -160,3 +169,7 @@ a portal whose role the user doesn't hold gets nothing. Any signature write
 role's scope — `requests_for(user, role=…)` — never the union of the user's roles,
 or a teacher who is also an HS admin signs as instructor for a colleague's section.
 Student/parent signatures come only from the student on their own request.
+Bulk approve touches only rows still `Pending` for that role. With no portal
+namespace, `acting_role` falls back to the first held role for GET/HEAD only.
+`submitting_roles(user)` (roles ticked in *start_new_request*) scopes `submit_request`,
+the New Request dropdown feeds and submit-time pre-approval alike.
