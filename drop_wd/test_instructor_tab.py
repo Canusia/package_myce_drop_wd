@@ -21,3 +21,15 @@ class InstructorTabRegistrationTests(SimpleTestCase):
     def test_no_registry_registers_nothing(self):
         with mock.patch.object(importlib.util, 'find_spec', return_value=None):
             self.assertIsNone(tabs._instructor_registry())
+
+
+class InstructorTabTemplateTests(SimpleTestCase):
+    def test_feed_url_filters_by_this_section(self):
+        # The feed only narrows to the section when the query string reads
+        # class_section_id=<id>; '&class_section_id<id>' sends no filter and
+        # the tab listed every request the instructor can see.
+        from django.template.loader import get_template
+        source = get_template(
+            'drop_wd/instructor/_class_section_tab.html').template.source
+        self.assertIn('&class_section_id={{class_section.id}}', source)
+        self.assertNotIn("&class_section_id' +", source)

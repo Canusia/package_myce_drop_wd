@@ -13,7 +13,7 @@ Context: class_section, drop_api_url, submit_new_drop_request_form.
         "fnDrawCallback": function( oSettings ) {
             $.unblockUI();
         },
-        ajax: '{{drop_api_url}}&class_section_id' + '{{class_section.id}}',
+        ajax: '{{drop_api_url}}&class_section_id={{class_section.id}}',
         serverSide: true,
         processing: true,
         stateSave: true,

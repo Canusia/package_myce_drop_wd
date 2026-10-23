@@ -11,6 +11,9 @@ incremental install silently keep the old code.
 ## Unreleased
 
 ### Fixed
+- **The instructor class-section tab lists only that section's requests.** Its feed URL
+  was built as `'&class_section_id' + id` (no `=`), so the feed got no section filter
+  and the tab listed every request the instructor could see.
 - **`myce_cis` is optional again, so tenants that keep `cis` in their own repo can
   upgrade** (#17). v2026.2.5 made `myce_cis>=0.1.7a` a hard dependency and imported
   `cis.highschool_scope` when the report module loaded; neither exists for an in-repo
