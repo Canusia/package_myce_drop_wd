@@ -11,6 +11,17 @@ incremental install silently keep the old code.
 ## Unreleased
 
 ### Fixed
+- **Debug mode emails only the new `debug_email_list`, never a personal address** (#15).
+  All three send paths (CE-office received, received, processed) used to replace the
+  recipients with a hard-coded personal address whenever Debug was on, the server ran
+  with `DEBUG`, or `settings.DEBUG` was missing. They now go through
+  `services/email.send_drop_wd_mail()` (mirrors package-grades#2 / package-class_visit):
+  **Yes** sends to the real recipients, **Debug** only to `debug_email_list` (nothing if
+  it is empty), **No** nothing; with `settings.DEBUG` on, Yes behaves as Debug. The new
+  **Debug Email List** setting is comma-separated, validated, blank by default, and Debug
+  can't be saved with it empty. `install()` now seeds `email_address_to_cep` blank
+  (add-missing-keys only, so existing tenants keep their value), and
+  `docs/settings-guide.md` no longer names a personal address.
 - **The instructor class-section tab lists only that section's requests.** Its feed URL
   was built as `'&class_section_id' + id` (no `=`), so the feed got no section filter
   and the tab listed every request the instructor could see.

@@ -49,8 +49,17 @@ class SettingForm(forms.Form):
     is_active = forms.ChoiceField(
         choices=STATUS_OPTIONS,
         label='Enabled',
-        help_text='',
+        help_text='Yes = send Drop/WD emails; Debug = send them only to the Debug Email List; '
+                  'No = send none. On a server running with DEBUG, Yes behaves as Debug.',
         widget=forms.Select(attrs={'class': 'col-md-4 col-sm-12'}))
+
+    debug_email_list = forms.CharField(
+        max_length=None,
+        required=False,
+        label='Debug Email List',
+        help_text='Comma-separated addresses that receive every Drop/WD email in Debug mode '
+                  '(and on a server running with DEBUG). Required for Debug.',
+    )
 
     allowed_terms = forms.MultipleChoiceField(
         choices=[],
@@ -170,6 +179,21 @@ class SettingForm(forms.Form):
         help_text='Form Field Labels & Help Text',
         label="Request Forms Field Labels")
 
+    def clean_debug_email_list(self):
+        from ..services.email import invalid_addresses, parse_addresses
+        value = self.cleaned_data.get('debug_email_list', '')
+        bad = invalid_addresses(value)
+        if bad:
+            raise ValidationError('Not a valid email address: %s' % ', '.join(bad))
+        return ', '.join(parse_addresses(value))
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get('is_active') == 'Debug' and not cleaned.get('debug_email_list') \
+                and 'debug_email_list' not in self.errors:
+            self.add_error('debug_email_list', 'Debug mode needs at least one address.')
+        return cleaned
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -185,6 +209,7 @@ class SettingForm(forms.Form):
         """
         return {
             'is_active': self.cleaned_data['is_active'],
+            'debug_email_list': self.cleaned_data.get('debug_email_list', ''),
             'start_new_request': self.cleaned_data['start_new_request'],
             'intro': self.cleaned_data['intro'],
             'submit_new_intro': self.cleaned_data['submit_new_intro'],
@@ -313,7 +338,18 @@ class drop_wd_email(SettingForm):
                 field.help_text = mark_safe(field_attr.get('help_text', ''))
 
     def install(self):
-        defaults = {'is_active': 'Yes', 'email_to_cep': 'Change this in Settings -> Misc -> Subject', 'processed_email': 'Change this in Settings -> Misc -> Subject', 'email_address_to_cep': 'kadaji@gmail.com', 'email_subject_to_cep': 'Change this in Settings -> Misc -> Subject', 'processed_email_subject': 'Change this in Settings -> Misc -> Subject'}
+        # Add-missing-keys only: an existing tenant's values are never touched.
+        # No address is seeded -- CE fills in the CE office list (and the debug
+        # list, to preview in Debug mode) (#15).
+        defaults = {
+            'is_active': 'Yes',
+            'debug_email_list': '',
+            'email_to_cep': 'Change this in Settings -> Misc -> Subject',
+            'processed_email': 'Change this in Settings -> Misc -> Subject',
+            'email_address_to_cep': '',
+            'email_subject_to_cep': 'Change this in Settings -> Misc -> Subject',
+            'processed_email_subject': 'Change this in Settings -> Misc -> Subject',
+        }
 
         _install_defaults(self.key, defaults)
 

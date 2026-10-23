@@ -49,7 +49,16 @@ Controls whether the Drop/WD Request feature is active.
 |---|---|
 | **Yes** | Feature is fully active |
 | **No** | No emails are sent; requests can still be submitted |
-| **Debug** | Emails are sent only to the debug address (`kadaji@gmail.com`) |
+| **Debug** | Emails are sent only to the addresses in **Debug Email List** — nobody else. Saving Debug with an empty list is refused. |
+
+On a server running with Django `DEBUG` on, **Yes** behaves as **Debug**: mail goes to the
+Debug Email List, or nowhere if it is empty. There is no fallback address.
+
+### Debug Email List
+
+Comma-separated addresses that receive every Drop/WD email (CE-office, received and
+processed notifications) while **Enabled** is **Debug**. Blank by default; each address is
+validated on save.
 
 ---
 
@@ -138,7 +147,7 @@ Check each party who should receive an email when a request is submitted and whe
 
 Sent to the CE office email address(es) when a new request is submitted.
 
-**To address:** Enter one or more comma-separated email addresses in **To CE Office — Email Address**.
+**To address:** Enter one or more comma-separated email addresses in **To CE Office — Email Address**. It is blank on a new install — until it is filled in, this email goes to no one.
 
 **Available short codes:**
 

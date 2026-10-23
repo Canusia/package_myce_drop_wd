@@ -52,6 +52,7 @@ Use `drop_wd_email.from_db()` to read. Key fields:
 | Field | Purpose |
 |---|---|
 | `is_active` | Yes / No / Debug |
+| `debug_email_list` | Comma-separated; the only recipients in Debug (and when `settings.DEBUG` is on). Debug can't be saved with it empty. |
 | `allowed_terms` | List of term IDs — if empty, drops are NOT permitted |
 | `allowed_registration_statuses` | Registration statuses eligible for drop requests |
 | `allowed_class_section_statuses` | Class section statuses shown when selecting a term |
@@ -70,6 +71,7 @@ Helper methods on `drop_wd_email`:
 ### Email Notifications
 - **`send_received_notification()`** — fired on `post_save` when a request is first created; sends to CE office
 - **`send_processed_notification()`** — fired on `pre_save` only when status changes to `'processed'`; sends to `created_by` + all checked parties in `notification_list`
+- Every send goes through `services/email.send_drop_wd_mail()` (Yes / Debug / No switch, `settings.DEBUG` → Debug). Never hard-code a fallback recipient.
 - `validate_email` from Django raises `ValidationError` on invalid (does NOT return bool) — always use try/except pattern, never `if validate_email(...)`
 
 ### Notes

@@ -9,6 +9,7 @@ from django.template.loader import get_template, render_to_string
 from django.core.validators import validate_email
 
 from .settings.drop_wd_email import drop_wd_email
+from .services.email import parse_addresses, send_drop_wd_mail
 
 from model_utils import FieldTracker
 
@@ -324,17 +325,8 @@ class DropWDRequest(models.Model):
             'message': text_body
         })
 
-        if getattr(settings, 'DEBUG', True) or email_settings.get('is_active') == 'Debug':
-            to = ['kadaji@gmail.com']
-
-        if to:
-            send_html_mail(
-                subject,
-                text_body,
-                html_body,
-                settings.DEFAULT_FROM_EMAIL,
-                to
-            )
+        # Yes / Debug (debug_email_list only) / No, and settings.DEBUG (#15).
+        send_drop_wd_mail(email_settings, subject, text_body, html_body, to)
 
     def send_received_notification(self):
 
@@ -346,7 +338,7 @@ class DropWDRequest(models.Model):
         instructor_user = instance.get_instructor_user()
 
         # notify ce staff
-        to = email_settings.get('email_address_to_cep').split(',')
+        to = parse_addresses(email_settings.get('email_address_to_cep'))
 
         email_template = Template(email_settings['email_to_cep'])
         subject = email_settings.get('email_subject_to_cep')
@@ -371,17 +363,8 @@ class DropWDRequest(models.Model):
             'message': text_body
         })
 
-        if getattr(settings, 'DEBUG', True) or email_settings.get('is_active') == 'Debug':
-            to = ['kadaji@gmail.com']
-
-        if to:
-            send_html_mail(
-                subject,
-                text_body,
-                html_body,
-                settings.DEFAULT_FROM_EMAIL,
-                to
-            )
+        # Yes / Debug (debug_email_list only) / No, and settings.DEBUG (#15).
+        send_drop_wd_mail(email_settings, subject, text_body, html_body, to)
         
         # notify student
         email_template = Template(email_settings['processed_email'])
@@ -435,17 +418,8 @@ class DropWDRequest(models.Model):
             'message': text_body
         })
 
-        if getattr(settings, 'DEBUG', True) or email_settings.get('is_active') == 'Debug':
-            to = ['kadaji@gmail.com']
-
-        if to:
-            send_html_mail(
-                subject,
-                text_body,
-                html_body,
-                settings.DEFAULT_FROM_EMAIL,
-                to
-            )
+        # Yes / Debug (debug_email_list only) / No, and settings.DEBUG (#15).
+        send_drop_wd_mail(email_settings, subject, text_body, html_body, to)
 
     @property
     def approvals(self):
