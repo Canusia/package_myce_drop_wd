@@ -253,6 +253,8 @@ def submit_request(request):
             form = StudentDropWDRequestForm(student=request.user.student, data=request.POST)
         else:
             form = DropWDRequestForm(data=request.POST)
+        # Term drop/withdraw deadlines bind everyone but CE (#142).
+        form.enforce_term_deadlines = not user_has_role(request.user, CE)
 
         if form.is_valid():
             try:

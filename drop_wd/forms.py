@@ -438,6 +438,13 @@ class DropWDRequestForm(forms.Form):
         if allowed_terms and str(regis.class_section.term.id) not in allowed_terms:
             raise ValidationError('Drop requests are not allowed for registrations in this term.')
 
+        # Term deadlines (#142). CE administrators are never blocked: the view
+        # turns this off for them.
+        if getattr(self, 'enforce_term_deadlines', True):
+            refusal = DropWDRequest.deadline_refusal(regis.class_section.term)
+            if refusal:
+                raise ValidationError(refusal)
+
         return regis
 
     def save(self, request):

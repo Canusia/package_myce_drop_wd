@@ -177,6 +177,37 @@ class DropWDRequest(models.Model):
             return True
         return False
     
+    @staticmethod
+    def deadline_refusal(term, today=None):
+        """Why a drop/withdraw request for a registration in ``term`` is too
+        late, or None when it may be filed (#142).
+
+        The term's drop and withdraw deadlines (``Term.operational_date``,
+        inherited from parent terms) are the last day each is accepted. This
+        app has one kind of request: a drop up to the drop deadline and a
+        withdrawal up to the withdraw deadline, so requests end after the
+        later deadline set and the message names that one. Blank = no limit.
+        An older cis without ``operational_date`` never refuses.
+        """
+        operational_date = getattr(term, 'operational_date', None)
+        if operational_date is None:
+            return None
+        deadlines = [
+            (date, kind) for kind, date in (
+                ('drop', operational_date('drop_deadline_on')),
+                ('withdraw', operational_date('withdraw_deadline_on')),
+            ) if date is not None
+        ]
+        if not deadlines:
+            return None
+        if today is None:
+            from django.utils import timezone
+            today = timezone.localdate()
+        date, kind = max(deadlines, key=lambda item: (item[0], item[1] == 'withdraw'))
+        if today <= date:
+            return None
+        return f'The {kind} deadline for {term} was {date.strftime("%m/%d/%Y")}.'
+
     @classmethod
     def can_instructor_submit_request(self):
         configs = drop_wd_email.from_db()
