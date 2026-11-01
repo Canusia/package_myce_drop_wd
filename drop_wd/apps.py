@@ -44,6 +44,7 @@ class DropWdConfig(AppConfig):
     def ready(self):
         import drop_wd.signals
         from . import tabs  # noqa: F401  instructor + HS admin class section tabs
+        from . import menu  # noqa: F401  sidebar items (cis.menu_registry)
 
 
 class DevDropWdConfig(AppConfig):
@@ -90,3 +91,4 @@ class DevDropWdConfig(AppConfig):
     def ready(self):
         import drop_wd.drop_wd.signals
         from . import tabs  # noqa: F401  instructor + HS admin class section tabs    
+        from . import menu  # noqa: F401  sidebar items (cis.menu_registry)
