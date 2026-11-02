@@ -8,6 +8,22 @@ through the `git+https://…@<tag>` line in its `webapp/requirements.txt`. The p
 keys upgrades off the version string, not the tag, so a frozen version makes an
 incremental install silently keep the old code.
 
+## v2026.2.9 — 2026-11-02
+
+### Upgrade
+- No migrations, no `register_settings`. Deadlines need `myce_cis` v0.1.42a+ (term-owned
+  dates); on an older cis requests are never refused for lateness, as before.
+- Fill in each term's **Drop deadline** / **Withdraw deadline** (inherited from parent terms)
+  if requests should close; blank means no limit.
+
+### Added
+- **Drop / withdraw deadlines from the term (#142).** A request is accepted up to the later of
+  the term's drop and withdraw deadlines (both days inclusive); after that, students, HS admins
+  and instructors get "The <drop|withdraw> deadline for <term> was <date>." CE administrators
+  are never blocked.
+- Publishes its sidebar items to the cis menu registry (myce_cis v0.1.43a+); on an older cis
+  nothing registers.
+
 ## v2026.2.8 — 2026-10-23
 
 ### Upgrade
