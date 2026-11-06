@@ -159,3 +159,70 @@ class OlderCisFallbackTests(_SecondaryFixture):
             self.assertTrue(secondary.user_can(self.a['section'], self.a['teacher']))
             self.assertEqual(secondary.notified_users(self.a['section']),
                              [self.a['teacher']])
+
+
+class SecondaryNeverSignsTests(_SecondaryFixture):
+    """With DROP_WD allowed a secondary teacher sees and submits requests, but
+    only the primary teacher signs as instructor (product call, cis#154)."""
+
+    def setUp(self):
+        super().setUp()
+        from .models import DropWDRequest
+        Setting.objects.update_or_create(
+            key=drop_wd_email.key, defaults={'value': {
+                'start_new_request': ['instructor'],
+                'signatures_required_from': ['instructor'],
+            }})
+        DropWDRequest.objects.update(instructor_signature='Pending')
+        self._allow()
+
+    def _bulk(self, user):
+        self.client.force_login(user)
+        return self.client.post(
+            reverse('instructor_drop_wd:bulk_actions'),
+            {'action': 'mark_as_approved', 'ids[]': [str(self.a['request'].id)]})
+
+    def _review(self, user):
+        self.client.force_login(user)
+        return self.client.post(
+            reverse('instructor_drop_wd:request', args=[self.a['request'].id]),
+            {'action': 'review_request', 'review_decision': '1', 'note': ''})
+
+    def test_secondary_bulk_approve_is_skipped(self):
+        self._bulk(self.b['teacher'])
+        self.assertEqual(self._refresh(self.a).instructor_signature, 'Pending')
+
+    def test_primary_bulk_approve_still_works(self):
+        self._bulk(self.a['teacher'])
+        self.assertEqual(self._refresh(self.a).instructor_signature, 'Approved')
+
+    def test_secondary_can_open_but_not_review(self):
+        self.client.force_login(self.b['teacher'])
+        url = reverse('instructor_drop_wd:request', args=[self.a['request'].id])
+        self.assertEqual(self.client.get(url).status_code, 200)
+        self._review(self.b['teacher'])
+        self.assertEqual(self._refresh(self.a).instructor_signature, 'Pending')
+
+    def test_primary_review_still_works(self):
+        self._review(self.a['teacher'])
+        self.assertEqual(self._refresh(self.a).instructor_signature, 'Approved')
+
+    def _submit(self, user):
+        from .models import DropWDRequest
+        registration = self.a['registration']
+        DropWDRequest.objects.filter(registration=registration).delete()
+        self.client.force_login(user)
+        response = self.client.post(reverse('instructor_drop_wd:submit_request'), {
+            'term': str(self.term.id),
+            'class_section': str(registration.class_section.id),
+            'registration': str(registration.id),
+            'note': 'please drop',
+        })
+        self.assertEqual(response.status_code, 200, response.content)
+        return DropWDRequest.objects.get(registration=registration)
+
+    def test_secondary_submission_is_not_instructor_signed(self):
+        self.assertEqual(self._submit(self.b['teacher']).instructor_signature, 'Pending')
+
+    def test_primary_submission_is_instructor_signed(self):
+        self.assertEqual(self._submit(self.a['teacher']).instructor_signature, 'Approved')

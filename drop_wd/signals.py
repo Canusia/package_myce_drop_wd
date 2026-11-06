@@ -78,7 +78,8 @@ def create_new_request(sender, instance, created, **kwargs):
                 # on their own registration. Not the union of their roles, or a
                 # teacher who is also an HS admin would sign as instructor for
                 # a colleague's section (#12). And only in a role the settings
-                # let start a request at all.
+                # let start a request at all. signing=True: a secondary teacher
+                # may submit, but only the primary signs as instructor (cis#154).
                 from .scoping import (
                     INSTRUCTOR, HIGHSCHOOL_ADMIN, STUDENT,
                     registration_in_role_scope,
@@ -89,7 +90,8 @@ def create_new_request(sender, instance, created, **kwargs):
 
                 def own_signature(role):
                     if role in may_submit_as and \
-                            registration_in_role_scope(user, role, instance.registration):
+                            registration_in_role_scope(user, role, instance.registration,
+                                                       signing=True):
                         return 'Approved'
                     return 'Pending'
 

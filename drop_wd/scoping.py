@@ -110,14 +110,18 @@ def acting_role(request):
     return None
 
 
-def _role_scope(user, role):
+def _role_scope(user, role, signing=False):
     """Q over StudentRegistration for one role; matches nothing if the user
-    doesn't hold it. CE is unrestricted."""
+    doesn't hold it. CE is unrestricted. ``signing``: the scope a signature
+    may be given in -- for instructors the primary teacher's sections only;
+    secondary teachers may see and submit but never sign (cis#154)."""
     if not user_has_role(user, role):
         return Q(pk__in=[])
     if role == CE:
         return Q()
     if role == INSTRUCTOR:
+        if signing:
+            return Q(class_section__teacher__user=user)
         # Primary sections, plus secondary ones when the Secondary Teacher
         # Access setting allows Drop/WD (cis#154).
         return user_sections_q(user, prefix='class_section__')
@@ -139,7 +143,7 @@ def _held_roles(user, role=None, roles=None):
     return [r for r in roles if user_has_role(user, r)]
 
 
-def registrations_for(user, role=None, roles=None):
+def registrations_for(user, role=None, roles=None, signing=False):
     """StudentRegistrations a user may see, file or sign for.
 
     ``role``: that one role's scope only (what a signature must be checked
@@ -147,6 +151,9 @@ def registrations_for(user, role=None, roles=None):
     every role the user holds -- CE staff all, instructors the sections they
     teach, HS admins students at their schools, students their own. A role the
     user doesn't hold contributes nothing, so anyone else gets none.
+
+    ``signing``: only where a signature may be given (instructors: primary
+    sections only, not secondary ones -- cis#154).
     """
     held = _held_roles(user, role, roles)
     records = StudentRegistration.objects.all()
@@ -155,19 +162,21 @@ def registrations_for(user, role=None, roles=None):
 
     scope = Q(pk__in=[])
     for r in held:
-        scope |= _role_scope(user, r)
+        scope |= _role_scope(user, r, signing=signing)
     return records.filter(scope)
 
 
-def requests_for(user, role=None, roles=None):
-    """DropWDRequests on registrations_for(user, role, roles)."""
+def requests_for(user, role=None, roles=None, signing=False):
+    """DropWDRequests on registrations_for(user, role, roles, signing)."""
     held = _held_roles(user, role, roles)
     if CE in held:
         return DropWDRequest.objects.all()
     return DropWDRequest.objects.filter(
-        registration__in=registrations_for(user, roles=held))
+        registration__in=registrations_for(user, roles=held, signing=signing))
 
 
-def registration_in_role_scope(user, role, registration):
-    """True if ``registration`` is inside ``role``'s own scope for ``user``."""
-    return registrations_for(user, role=role).filter(pk=registration.pk).exists()
+def registration_in_role_scope(user, role, registration, signing=False):
+    """True if ``registration`` is inside ``role``'s own scope for ``user``
+    (with ``signing``, the narrower scope a signature may be given in)."""
+    return registrations_for(user, role=role, signing=signing).filter(
+        pk=registration.pk).exists()

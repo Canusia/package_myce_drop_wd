@@ -326,7 +326,9 @@ def do_bulk_action(request):
     # Only still-Pending signatures, so a bulk click can't overturn an earlier
     # 'Not Approved' or flip 'Not Needed'; and save() per row rather than
     # QuerySet.update(), so each change lands in the request's history (#4).
-    pending = requests_for(request.user, role=role).filter(
+    # signing=True: a secondary teacher may see a section's requests but
+    # only the primary signs as instructor (cis#154).
+    pending = requests_for(request.user, role=role, signing=True).filter(
         id__in=valid_ids, **{field: 'Pending'})
     updated = 0
     with transaction.atomic():
@@ -365,7 +367,12 @@ def drop_request(request, record_id):
 
     elif role == INSTRUCTOR:
         template = 'drop_wd/instructor/request.html'
-        needs_to_approve = record.record_needs_instructor_approval()
+        # Only the primary teacher signs as instructor; a secondary teacher
+        # may view the request but not approve it (cis#154).
+        needs_to_approve = (
+            record.record_needs_instructor_approval()
+            and requests_for(request.user, role=role, signing=True)
+            .filter(pk=record.pk).exists())
 
     elif role == HIGHSCHOOL_ADMIN:
         template = 'drop_wd/highschool_admin/request.html'
