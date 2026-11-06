@@ -8,6 +8,10 @@ through the `git+https://…@<tag>` line in its `webapp/requirements.txt`. The p
 keys upgrades off the version string, not the tag, so a frozen version makes an
 incremental install silently keep the old code.
 
+## v2026.2.10 — 2026-11-06
+
+- Secondary teachers (package-cis#154): with Drop/WD allowed in cis Secondary Teacher Access they see/submit requests, get emails and the tab; signing stays with the primary teacher.
+
 ## v2026.2.9 — 2026-11-02
 
 ### Upgrade
