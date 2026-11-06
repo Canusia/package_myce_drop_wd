@@ -303,6 +303,14 @@ class DropWDRequest(models.Model):
         teacher = self.registration.class_section.teacher
         return teacher.user if teacher else None
 
+    def instructor_users(self):
+        """Accounts of the teachers mailed about this request: the primary,
+        plus secondary teachers when the Secondary Teacher Access setting
+        allows Drop/WD (cis#154). get_instructor_user() stays the primary,
+        for the email's instructor name."""
+        from .secondary import notified_users
+        return notified_users(self.registration.class_section)
+
     def send_processed_notification(self):
 
         instance = self
@@ -354,12 +362,15 @@ class DropWDRequest(models.Model):
                 ...
 
         if 'instructor' in email_settings.get('notification_list', []):
-            try:
-                validate_email(instance.registration.class_section.teacher.user.email)
-                if instance.registration.class_section.teacher.user.email not in to:
-                    to.append(instance.registration.class_section.teacher.user.email)
-            except:
-                ...
+            # The primary teacher, plus secondaries the Secondary Teacher
+            # Access setting lets do Drop/WD (cis#154).
+            for teacher_user in instance.instructor_users():
+                try:
+                    validate_email(teacher_user.email)
+                    if teacher_user.email not in to:
+                        to.append(teacher_user.email)
+                except Exception:
+                    ...
 
         if 'highschool_admin' in email_settings.get('notification_list', []):
             try:
@@ -442,13 +453,17 @@ class DropWDRequest(models.Model):
                 ...
 
         if 'instructor' in email_settings.get('notification_list', []):
-            try:
-                # validate_email raises on a bad address and returns None on
-                # a good one -- never `if validate_email(...)`.
-                validate_email(instance.registration.class_section.teacher.user.email)
-                to.append(instance.registration.class_section.teacher.user.email)
-            except Exception:
-                ...
+            # The primary teacher, plus secondaries the Secondary Teacher
+            # Access setting lets do Drop/WD (cis#154).
+            for teacher_user in instance.instructor_users():
+                try:
+                    # validate_email raises on a bad address and returns None
+                    # on a good one -- never `if validate_email(...)`.
+                    validate_email(teacher_user.email)
+                    if teacher_user.email not in to:
+                        to.append(teacher_user.email)
+                except Exception:
+                    ...
     
         if instance.created_by:
             if instance.created_by.email not in to:

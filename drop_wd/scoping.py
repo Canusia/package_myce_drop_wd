@@ -26,6 +26,7 @@ from cis.models.section import StudentRegistration
 from cis.models.highschool_administrator import HSAdministrator
 
 from .models import DropWDRequest
+from .secondary import user_sections_q
 
 
 CE = 'ce'
@@ -117,7 +118,9 @@ def _role_scope(user, role):
     if role == CE:
         return Q()
     if role == INSTRUCTOR:
-        return Q(class_section__teacher__user=user)
+        # Primary sections, plus secondary ones when the Secondary Teacher
+        # Access setting allows Drop/WD (cis#154).
+        return user_sections_q(user, prefix='class_section__')
     if role == HIGHSCHOOL_ADMIN:
         hsadmin = HSAdministrator.objects.filter(user__id=user.id).first()
         if hsadmin is None:

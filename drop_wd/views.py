@@ -44,6 +44,7 @@ from .serializers import (
 )
 from .settings.drop_wd_email import drop_wd_email as drop_wd_settings
 from .portal_text import portal_text
+from .secondary import teacher_filter_q, user_sections_q
 from .scoping import (
     CE, INSTRUCTOR, HIGHSCHOOL_ADMIN, STUDENT, ROLES, SIGNATURE_FIELDS,
     acting_role,
@@ -131,7 +132,7 @@ class ClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
                 scope = Q(id__in=registrations_for(
                     user, roles=roles).values('class_section_id'))
                 if INSTRUCTOR in roles:
-                    scope |= Q(teacher__user=user)
+                    scope |= user_sections_q(user)  # incl. secondary (cis#154)
                 if HIGHSCHOOL_ADMIN in roles:
                     hsadmin = HSAdministrator.objects.filter(user__id=user.id).first()
                     if hsadmin is not None:
@@ -189,9 +190,9 @@ class DropWDRequestViewSet(viewsets.ReadOnlyModelViewSet):
                 )
 
             if teacher_id:
-                records = records.filter(
-                    registration__class_section__teacher__id=teacher_id
-                )
+                # Primary or secondary teacher (cis#154).
+                records = records.filter(teacher_filter_q(
+                    teacher_id, prefix='registration__class_section__'))
             
             if course_id:
                 records = records.filter(

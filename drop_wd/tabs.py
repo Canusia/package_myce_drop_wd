@@ -22,6 +22,14 @@ def _instructor_registry():
     return None
 
 
+def instructor_tab_allowed(user, class_section):
+    """Show the Drop/WD tab to the primary teacher, and to a secondary
+    teacher only when the Secondary Teacher Access setting allows Drop/WD
+    (cis#154)."""
+    from .secondary import user_can
+    return user_can(class_section, user)
+
+
 _registry = _instructor_registry()
 
 if _registry is not None:
@@ -29,7 +37,8 @@ if _registry is not None:
 
     @_registry.instructor_class_section_tabs.tab(
         slug='drop_wd', title='Drop/WD Request(s)', order=30, lazy=False,
-        template='drop_wd/instructor/_class_section_tab.html')
+        template='drop_wd/instructor/_class_section_tab.html',
+        permission=instructor_tab_allowed)
     def instructor_class_section_tab(request, class_section):
         return {
             'class_section': class_section,
